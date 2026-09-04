@@ -190,6 +190,13 @@ REQUIRED_SECTIONS = [
     "Rejected alternatives", "Open questions",
 ]
 
+# The iOS DESIGN.md owns flows/frames/surfaces and links the monorepo contract;
+# it carries no model or endpoint sections (see design-pr-flow.md "Cross-repo
+# features"). Detected by the iOS canvas filename recorded in pen-nodes.json.
+IOS_OMITTED_SECTIONS = {
+    "Existing models", "Model changes", "New models", "Data invariants", "Endpoint changes",
+}
+
 
 def sections(text):
     """Map '## Heading' -> body text (until the next '## ')."""
@@ -320,7 +327,9 @@ def run_checks(feature_dir):
 
     text = read(design_path)
     secs = sections(text)
-    for name in REQUIRED_SECTIONS:
+    ios = os.path.basename(pen_rel).startswith("playola-ios")
+    required = [s for s in REQUIRED_SECTIONS if not (ios and s in IOS_OMITTED_SECTIONS)]
+    for name in required:
         if name not in secs:
             errors.append(f"DESIGN.md: missing section '{name}'")
         elif name != "Open questions" and not secs[name].strip():

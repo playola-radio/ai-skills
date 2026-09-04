@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import re
 import tempfile
 import textwrap
 import unittest
@@ -260,6 +261,35 @@ class CheckTest(unittest.TestCase):
 
     def test_good_fixture_passes(self):
         self.assertEqual(self.errors(), [])
+
+    def _drop_model_endpoint_sections(self):
+        text = read_file(os.path.join(self.feature, "DESIGN.md"))
+        for name in ("Existing models", "Model changes", "New models",
+                     "Data invariants", "Endpoint changes"):
+            text = re.sub(rf"## {name}\n.*?(?=\n## )", "", text, flags=re.DOTALL)
+        write(os.path.join(self.feature, "DESIGN.md"), text)
+
+    def _set_pen_file(self, pen_rel):
+        nodes = json.loads(read_file(os.path.join(self.feature, "pen-nodes.json")))
+        nodes["penFile"] = pen_rel
+        write(os.path.join(self.feature, "pen-nodes.json"), json.dumps(nodes))
+
+    def test_ios_design_omits_model_and_endpoint_sections(self):
+        # An iOS DESIGN.md carries no model/endpoint sections (design-pr-flow.md
+        # "Cross-repo features"); the checker must accept that, keyed on the iOS
+        # canvas filename in pen-nodes.json.
+        self._drop_model_endpoint_sections()
+        self._set_pen_file("design/playola-ios.pen")
+        self.assertEqual(self.errors(), [])
+
+    def test_monorepo_still_requires_model_and_endpoint_sections(self):
+        # The same omission against the monorepo canvas must still fail loudly.
+        self._drop_model_endpoint_sections()
+        self._set_pen_file("design/playola.pen")
+        errors = self.errors()
+        for name in ("Existing models", "Model changes", "New models",
+                     "Data invariants", "Endpoint changes"):
+            self.assertIn(f"DESIGN.md: missing section '{name}'", errors)
 
     def test_review_not_clean_fails(self):
         write(os.path.join(self.feature, "REVIEW.md"), REVIEW_CLEAN.replace("audit_status: clean", "audit_status: blocked"))
