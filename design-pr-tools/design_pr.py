@@ -139,8 +139,224 @@ def main(argv):
     return 1 if errors else 0
 
 
+# ---------- git helpers ----------
+
+def _git(cwd, *args):
+    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def repo_root(path):
+    return _git(path if os.path.isdir(path) else os.path.dirname(path), "rev-parse", "--show-toplevel")
+
+
+def _dirty(root, rel):
+    return bool(_git(root, "status", "--porcelain", "--", rel))
+
+
+def _last_commit(root, rel):
+    return _git(root, "log", "-1", "--format=%H", "--", rel)
+
+
+def _is_ancestor(root, older, newer):
+    proc = subprocess.run(["git", "merge-base", "--is-ancestor", older, newer], cwd=root, capture_output=True)
+    return proc.returncode == 0
+
+
+def exports_fresh(root, pen_rel, nodes_rel):
+    """Exports are fresh when the canvas has not changed since pen-nodes.json was written.
+
+    Dirty canvas + clean exports = stale. Dirty both = same in-flight change, fine.
+    Committed: the canvas commit must be an ancestor of (or equal to) the exports commit.
+    """
+    pen_dirty, nodes_dirty = _dirty(root, pen_rel), _dirty(root, nodes_rel)
+    if pen_dirty:
+        return nodes_dirty
+    pen_commit, nodes_commit = _last_commit(root, pen_rel), _last_commit(root, nodes_rel)
+    if not pen_commit:
+        return True
+    if not nodes_commit:
+        return nodes_dirty
+    return pen_commit == nodes_commit or _is_ancestor(root, pen_commit, nodes_commit)
+
+
+# ---------- DESIGN.md parsing ----------
+
+REQUIRED_SECTIONS = [
+    "Summary", "User flows", "Design frames", "Existing models", "Model changes", "New models",
+    "Data invariants", "Endpoint changes", "Surfaces", "Implementation handoff", "Out of scope",
+    "Rejected alternatives", "Open questions",
+]
+
+
+def sections(text):
+    """Map '## Heading' -> body text (until the next '## ')."""
+    result, current, buf = {}, None, []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if current is not None:
+                result[current] = "\n".join(buf)
+            current, buf = line[3:].strip(), []
+        elif current is not None:
+            buf.append(line)
+    if current is not None:
+        result[current] = "\n".join(buf)
+    return result
+
+
+def table_rows(body):
+    """Yield (header_cells, row_cells) for every markdown table in body."""
+    header = None
+    for line in body.splitlines():
+        if not line.strip().startswith("|"):
+            header = None
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if header is None:
+            header = cells
+        elif all(re.fullmatch(r":?-+:?", c) for c in cells):
+            continue
+        else:
+            yield header, cells
+
+
+def _ids_in(text):
+    return set(re.findall(r"`([A-Za-z0-9]{4,8})`", text))
+
+
+def design_frames(body):
+    frames = []
+    for header, cells in table_rows(body):
+        if "Node ID" not in header or "PNG" not in header:
+            continue
+        row = dict(zip(header, cells))
+        frames.append({"id": row["Node ID"].strip("`"), "png": row["PNG"].strip("`")})
+    return frames
+
+
+def kinds_in(body):
+    for header, cells in table_rows(body):
+        if "Kind" in header and "Field" in header:
+            row = dict(zip(header, cells))
+            yield row.get("Model", ""), row.get("Field", ""), row.get("Kind", "")
+
+
+def endpoint_bodies(body):
+    """Yield (endpoint title, side, raw_json_or_None, said_no_body)."""
+    for block in re.split(r"^### ", body, flags=re.M)[1:]:
+        title, _, rest = block.partition("\n")
+        for side in ("Request", "Response"):
+            match = re.search(rf"^{side}:[ \t]*(.*)$", rest, re.M)
+            said_no_body = bool(match and "no body" in match.group(1).lower())
+            fence = None
+            if match and not said_no_body:
+                after = rest[match.end():]
+                after = re.split(r"^(?:Request|Response):", after, maxsplit=1, flags=re.M)[0]
+                fence_match = re.search(r"```json\s*\n(.*?)```", after, re.S)
+                fence = fence_match.group(1) if fence_match else None
+            yield title.strip(), side, fence, said_no_body
+
+
+def overlapping_active(entries):
+    active = active_decisions(entries)
+    overlaps = []
+    for i, a in enumerate(active):
+        for b in active[i + 1:]:
+            for target in a["affects"]:
+                if target in b["affects"]:
+                    overlaps.append((a["id"], b["id"], target))
+    return overlaps
+
+
+# ---------- hard checks ----------
+
 def run_checks(feature_dir):
-    raise NotImplementedError("added in Task 2")
+    errors = []
+    root = repo_root(feature_dir)
+
+    review_path = os.path.join(feature_dir, "REVIEW.md")
+    if not os.path.exists(review_path):
+        return ["REVIEW.md missing; run audit-pen-designs in Pen first"]
+    header = parse_front_matter(read(review_path))
+    if header.get("audit_status") != "clean":
+        errors.append(f"REVIEW.md audit_status is {header.get('audit_status')!r}, must be clean")
+    if header.get("tradeoffs_open", 1) != 0:
+        errors.append(f"REVIEW.md tradeoffs_open is {header.get('tradeoffs_open')!r}, must be 0")
+
+    decisions_path = os.path.join(feature_dir, "decisions.md")
+    if os.path.exists(decisions_path):
+        entries = parse_decisions(read(decisions_path))
+        by_id = {e["id"]: e for e in entries}
+        for e in entries:
+            target = e["supersedes"]
+            if target and target in by_id and by_id[target]["status"] != "superseded":
+                errors.append(f"decisions.md: {target} is superseded by {e['id']} but still marked active")
+
+    nodes_path = os.path.join(feature_dir, "pen-nodes.json")
+    design_path = os.path.join(feature_dir, "DESIGN.md")
+    if not os.path.exists(nodes_path):
+        errors.append("pen-nodes.json missing; run export-pen-designs in Pen")
+    if not os.path.exists(design_path):
+        errors.append("DESIGN.md missing")
+    if errors and (not os.path.exists(nodes_path) or not os.path.exists(design_path)):
+        return errors
+
+    with open(nodes_path) as f:
+        nodes = json.load(f)
+    node_ids = {f["id"] for f in nodes.get("frames", [])}
+    pen_rel = nodes.get("penFile", "design/playola.pen")
+    nodes_rel = os.path.relpath(os.path.realpath(nodes_path), root) if root else ""
+    if root and not exports_fresh(root, pen_rel, nodes_rel):
+        errors.append(f"exports are stale: {pen_rel} changed after pen-nodes.json was written; run export-pen-designs")
+
+    text = read(design_path)
+    secs = sections(text)
+    for name in REQUIRED_SECTIONS:
+        if name not in secs:
+            errors.append(f"DESIGN.md: missing section '{name}'")
+        elif name != "Open questions" and not secs[name].strip():
+            errors.append(f"DESIGN.md: section '{name}' is empty")
+
+    for token in ("TBD", "TODO"):
+        if re.search(rf"\b{token}\b", text):
+            errors.append(f"DESIGN.md: contains placeholder '{token}'")
+
+    open_q = "\n".join(l for l in secs.get("Open questions", "").splitlines()
+                       if l.strip() and not l.strip().startswith("(must be empty"))
+    if open_q.strip():
+        errors.append("DESIGN.md: 'Open questions' must be empty before the design PR is opened")
+
+    frames = design_frames(secs.get("Design frames", ""))
+    out_of_scope_ids = _ids_in(secs.get("Out of scope", ""))
+    for frame in frames:
+        if frame["id"] not in node_ids:
+            errors.append(f"DESIGN.md frame {frame['id']} is not in pen-nodes.json")
+        if not os.path.exists(os.path.join(feature_dir, frame["png"])):
+            errors.append(f"DESIGN.md frame {frame['id']}: PNG {frame['png']} not found on disk")
+    design_ids = {f["id"] for f in frames}
+    for node_id in sorted(node_ids - design_ids - out_of_scope_ids):
+        errors.append(f"pen-nodes.json frame {node_id} is neither in 'Design frames' nor listed under 'Out of scope'")
+
+    for section in ("Model changes", "New models"):
+        for model, field, kind in kinds_in(secs.get(section, "")):
+            if kind not in KINDS:
+                errors.append(f"DESIGN.md {section}: {model}.{field} Kind '{kind}' is not one of {sorted(KINDS)}")
+
+    for title, side, fence, said_no_body in endpoint_bodies(secs.get("Endpoint changes", "")):
+        if said_no_body:
+            continue
+        if fence is None:
+            errors.append(f"DESIGN.md endpoint {title}: {side} has no ```json body (write 'no body' if intentional)")
+            continue
+        try:
+            parsed = json.loads(fence)
+        except json.JSONDecodeError as exc:
+            errors.append(f"DESIGN.md endpoint {title}: {side} JSON does not parse ({exc.msg})")
+            continue
+        if parsed in ({}, []):
+            errors.append(f"DESIGN.md endpoint {title}: {side} body is empty (write 'no body' if intentional)")
+
+    return errors
 
 
 if __name__ == "__main__":
