@@ -24,15 +24,24 @@ Removes only symlinks pointing into this repo; leaves your other skills alone.
 
 ## Skills
 
-| Skill | What it does |
-|---|---|
-| `create-endpoint` | REST endpoint with integration tests + OpenAPI docs |
-| `create-lib` | Server library functions with TDD, one function at a time |
-| `create-model` | Sequelize model with migration, types, associations, tests |
-| `create-release-pr` | Analyze PRs merged to develop and create the release PR into main |
-| `diagnose-flaky` | Diagnose and fix flaky server tests |
-| `fix-review` | Fetch and address Claude review comments on the current branch's PR |
-| `review-pr` | Review the current branch against the PR review checklist |
+| Skill | Runs in | What it does |
+|---|---|---|
+| `begin-design-pr` | repo agent | Start a design PR: branch + `design/features/<slug>/brief.md` |
+| `begin-pen-session` | Pen.app | Orient on the brief and create the proposal row on the canvas |
+| `audit-pen-designs` | Pen.app | Audit proposal frames against the codebase on five dimensions; writes `REVIEW.md` / `decisions.md`; never edits the canvas |
+| `export-pen-designs` | Pen.app | PNGs + `pen-nodes.json` + `DESIGN_STATUS.md` rows; `--status` for transitions |
+| `finish-design-pr` | repo agent | Write `DESIGN.md`, run the hard checks and a Codex artifact review, open it |
+| `create-endpoint` | repo agent | REST endpoint with integration tests + OpenAPI docs |
+| `create-lib` | repo agent | Server library functions with TDD, one function at a time |
+| `create-model` | repo agent | Sequelize model with migration, types, associations, tests |
+| `create-release-pr` | repo agent | Analyze PRs merged to develop and create the release PR into main |
+| `diagnose-flaky` | repo agent | Diagnose and fix flaky server tests |
+| `fix-review` | repo agent | Fetch and address Claude review comments on the current branch's PR |
+| `review-pr` | repo agent | Review the current branch against the PR review checklist |
+
+The five design-pr skills share one flow: see [`design-pr-flow.md`](design-pr-flow.md).
+Their mechanical rules live in `design-pr-tools/design_pr.py` (`state` and `check`);
+run its tests with `python3 -m unittest discover design-pr-tools`.
 
 ## Adding a skill
 
