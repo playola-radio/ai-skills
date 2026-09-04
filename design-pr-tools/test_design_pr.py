@@ -291,6 +291,17 @@ class CheckTest(unittest.TestCase):
                      "Data invariants", "Endpoint changes"):
             self.assertIn(f"DESIGN.md: missing section '{name}'", errors)
 
+    def test_blocking_findings_nonzero_fails(self):
+        write(os.path.join(self.feature, "REVIEW.md"), REVIEW_CLEAN.replace("blocking_findings: 0", "blocking_findings: 1"))
+        self.assertTrue(any("blocking_findings" in e for e in self.errors()))
+
+    def test_endpoint_table_row_without_detail_block_fails(self):
+        self.set_design(
+            "| POST | /v1/foos | required | create | New |",
+            "| POST | /v1/foos | required | create | New |\n| GET | /v1/foos/:id | required | read | New |",
+        )
+        self.assertTrue(any("GET /v1/foos/:id" in e and "detail block" in e for e in self.errors()))
+
     def test_review_not_clean_fails(self):
         write(os.path.join(self.feature, "REVIEW.md"), REVIEW_CLEAN.replace("audit_status: clean", "audit_status: blocked"))
         self.assertTrue(any("audit_status" in e for e in self.errors()))

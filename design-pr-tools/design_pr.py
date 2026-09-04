@@ -266,6 +266,23 @@ def endpoint_bodies(body):
             yield title.strip(), side, fence, said_no_body
 
 
+def endpoint_table_rows(body):
+    """Yield 'METHOD path' for each row of the Endpoint changes table."""
+    for header, cells in table_rows(body):
+        if "Method" not in header or "Path" not in header:
+            continue
+        row = dict(zip(header, cells))
+        method, path = row.get("Method", "").strip(), row.get("Path", "").strip()
+        if method and path:
+            yield f"{method} {path}"
+
+
+def endpoint_detail_titles(body):
+    """The set of '### METHOD path' detail-block headings."""
+    return {block.partition("\n")[0].strip()
+            for block in re.split(r"^### ", body, flags=re.M)[1:]}
+
+
 def overlapping_active(entries):
     active = active_decisions(entries)
     overlaps = []
@@ -298,6 +315,8 @@ def run_checks(feature_dir):
         errors.append(f"REVIEW.md audit_status is {header.get('audit_status')!r}, must be clean")
     if header.get("tradeoffs_open", 1) != 0:
         errors.append(f"REVIEW.md tradeoffs_open is {header.get('tradeoffs_open')!r}, must be 0")
+    if header.get("blocking_findings", 1) != 0:
+        errors.append(f"REVIEW.md blocking_findings is {header.get('blocking_findings')!r}, must be 0")
 
     decisions_path = os.path.join(feature_dir, "decisions.md")
     if os.path.exists(decisions_path):
@@ -360,7 +379,13 @@ def run_checks(feature_dir):
             if kind not in KINDS:
                 errors.append(f"DESIGN.md {section}: {model}.{field} Kind '{kind}' is not one of {sorted(KINDS)}")
 
-    for title, side, fence, said_no_body in endpoint_bodies(secs.get("Endpoint changes", "")):
+    endpoint_body = secs.get("Endpoint changes", "")
+    detail_titles = endpoint_detail_titles(endpoint_body)
+    for row in endpoint_table_rows(endpoint_body):
+        if row not in detail_titles:
+            errors.append(f"DESIGN.md Endpoint changes: table lists '{row}' but has no '### {row}' detail block")
+
+    for title, side, fence, said_no_body in endpoint_bodies(endpoint_body):
         if said_no_body:
             continue
         if fence is None:
