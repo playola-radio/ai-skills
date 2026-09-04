@@ -132,6 +132,8 @@ def main(argv):
         for key in ("state", "next", "agent", "reason"):
             print(f"{key.upper()}={s[key]}")
         return 0
+    for a, b, target in overlaps_in(feature_dir):
+        print(f"OVERLAP: {a} and {b} both affect {target}; read both")
     errors = run_checks(feature_dir)
     for e in errors:
         print(f"FAIL: {e}")
@@ -266,6 +268,13 @@ def overlapping_active(entries):
                 if target in b["affects"]:
                     overlaps.append((a["id"], b["id"], target))
     return overlaps
+
+
+def overlaps_in(feature_dir):
+    path = os.path.join(feature_dir, "decisions.md")
+    if not os.path.exists(path):
+        return []
+    return overlapping_active(parse_decisions(read(path)))
 
 
 # ---------- hard checks ----------

@@ -81,8 +81,9 @@ zone for `<slug>` in `design/DESIGN_STATUS.md`; if missing, stop: "run
 
 ## Never
 
-- Insert, Update, Move, or Delete any node. Reading (`Get`, `TakeScreenshot`,
-  `Export` via the export skill) only.
+- Insert, Update, Move, Delete, Replace, or Generate any node, or
+  SetVariables. Reading (`Get`, `TakeScreenshot`, `Export` via the export
+  skill) only.
 - Ask an open-ended question. Every owner question is A/B + recommendation.
 - Mark `clean` while a proposed fix is unapplied.
 

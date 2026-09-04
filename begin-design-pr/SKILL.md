@@ -11,7 +11,8 @@ happens next, in Pen.app. Flow reference: `~/playola/playola-skills/design-pr-fl
 ## Guard
 
 1. You are in a git worktree: `git rev-parse --show-toplevel` succeeds. If not, stop.
-2. Exactly one `design/*.pen` exists. If none:
+2. Exactly one `design/*.pen` exists. If more than one: stop and ask the
+   owner which file is the canvas. If none:
    stop and print the one-time move for this repo:
 
    ```bash

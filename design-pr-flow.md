@@ -199,11 +199,13 @@ Response:
 (must be empty before the design PR is opened)
 ```
 
+Style rule (not machine-checked): `Source` names the row for `stored` and the
+path (for example `Station.name`) for `populated`.
+
 Rules the hard checks enforce:
 
 - `Kind` is exactly one of `stored`, `populated`, `computed`, `request-only`,
-  `response-only`. `Source` names the row for `stored` and the path (for
-  example `Station.name`) for `populated`.
+  `response-only`.
 - Node IDs are written in backticks. PNG paths are relative to the feature
   folder and must exist.
 - Every frame in `pen-nodes.json` appears in "Design frames" or is named in

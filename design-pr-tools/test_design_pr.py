@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -341,6 +343,23 @@ class OverlapTest(unittest.TestCase):
             """)
         overlaps = design_pr.overlapping_active(design_pr.parse_decisions(text))
         self.assertEqual(overlaps, [("D2", "D3", "GET /v1/stations/:id")])
+
+    def test_check_prints_overlaps_from_decisions_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "decisions.md"), "w") as f:
+                f.write(DECISIONS + textwrap.dedent("""\
+
+                    ## D3 — Expose category on station GET?
+                    Status: active
+                    Options: A yes / B no
+                    Chosen: A
+                    Reason: needed by ios
+                    Affects: GET /v1/stations/:id
+                    """))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                design_pr.main(["design_pr.py", "check", d])
+            self.assertIn("OVERLAP: D2 and D3 both affect GET /v1/stations/:id", out.getvalue())
 
 
 def read_file(path):

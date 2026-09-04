@@ -13,7 +13,8 @@ creation stays manual. Flow reference:
 ## Guard
 
 1. `git rev-parse --show-toplevel` succeeds; never call pencil tools.
-2. `design/features/<slug>/REVIEW.md` exists with `audit_status: clean`.
+2. `design/features/<slug>/REVIEW.md` exists with `audit_status: clean`
+   (if there is more than one feature folder, ask which slug).
    Otherwise print the status and "run `audit-pen-designs` in Pen first", stop.
 
 ## Steps
