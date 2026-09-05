@@ -88,9 +88,28 @@ In scope:
 - <bullet>
 Out of scope:
 - <bullet>
+Replaces production:
+- <legacy surface this slice replaces, or "none">
+Volume assumptions:
+- <list screen>: <realistic upper bound, e.g. "producer queue: 100s of rows">
+- <or "none — no list surfaces in this slice">
 Known constraints:
 - <bullet, e.g. "categories are versioned; targets are not">
+
+## Slice ledger
+- In slice: <the one vertical slice this PR designs, end to end>
+- Deferred: <the rest of the feature as a lightweight future map>
+- Rejected: <slices or approaches considered and dropped, with why>
+- Trigger to split: <the signal that says "cut here", e.g. ">~6 primary frames">
 ```
+
+One design PR designs one vertical slice. The `Slice ledger` is the front-of-
+process scope decision `begin-design-pr` records and `finish-design-pr` carries
+into `DESIGN.md`; it is what keeps "design too much" from creeping back, because
+`Deferred` is a deliberate future map, not missing coverage. A non-"none"
+`Replaces production` makes the audit's legacy-inspection a hard gate: the audit
+must record the old surface (model / service / route / tests / docs) in
+`REVIEW.md` `legacy_sources` before it can go clean.
 
 ### `REVIEW.md`
 
@@ -110,6 +129,9 @@ sources:
   - docs/context/features/shows.md
   - server/src/db/models/stationCategory.model/MODEL.md
   - server/src/api/station/ENDPOINTS.md
+legacy_sources:
+  - client/src/Pages/EpisodeDetailPage
+  - server/src/api/episode/controller.ts
 ---
 ## Obvious findings (proposed fixes, not applied)
 - <dimension> · <frame> · <finding> → proposed fix: <...>
@@ -121,7 +143,10 @@ sources:
 
 `blocking_findings` counts obvious findings not yet fixed on the canvas.
 `tradeoffs_open` counts owner tradeoffs without a `decisions.md` entry.
-`audit_status` is `clean` only when both are 0.
+`audit_status` is `clean` only when both are 0. `sources` lists the
+context/schema docs read; `legacy_sources` lists the legacy code paths
+inspected and is required (a non-empty list) only when `brief.md` sets
+`Replaces production`.
 
 ### `decisions.md`
 
@@ -167,6 +192,11 @@ Design PR: <url once opened, else "pending">
 Last exported: YYYY-MM-DD
 
 ## Summary
+## Slice ledger
+- In slice: <this PR's vertical slice>
+- Deferred: <future map>
+- Rejected: <dropped slices/approaches, with why>
+- Trigger to split: <the "cut here" signal>
 ## User flows
 | Flow | Surface | Entry point | Result | Frames |
 ## Design frames
@@ -177,6 +207,8 @@ Last exported: YYYY-MM-DD
 | Model | Field | Kind | Type | Nullable | Source | Notes |
 ## New models
 (one table per model, same columns as Model changes, then a YAML block per model)
+## Omitted properties
+| Model | Considered field | Why omitted |
 ## Data invariants
 | Invariant | Enforced by | Failure if violated |
 ## Endpoint changes
@@ -207,10 +239,19 @@ Rules the hard checks enforce:
 
 - `Kind` is exactly one of `stored`, `populated`, `computed`, `request-only`,
   `response-only`.
+- `Slice ledger` carries all four buckets (`In slice:`, `Deferred:`,
+  `Rejected:`, `Trigger to split:`), each as a labelled line.
+- `Omitted properties` is present; when any field is added under Model changes
+  or New models, it has at least one full table row (record what you left out,
+  and why — default is no new property).
+- A non-"none" `Replaces production` in `brief.md` requires `REVIEW.md`
+  `legacy_sources` to be non-empty (the audit inspected the legacy surface).
 - Node IDs are written in backticks. PNG paths are relative to the feature
   folder and must exist.
 - Every frame in `pen-nodes.json` appears in "Design frames" or is named in
-  backticks under "Out of scope".
+  backticks under "Out of scope". Frames drawn past the current slice belong
+  under "Out of scope" (and map to the ledger's `Deferred`/`Rejected`), never
+  smuggled into the contract to look complete.
 - Each `### METHOD path` has `Request:` and `Response:` followed by a
   ```` ```json ```` fence that parses and is not `{}` or `[]`, or the literal
   text `no body` on that line.

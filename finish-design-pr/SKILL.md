@@ -34,16 +34,26 @@ creation stays manual. Flow reference:
    every overlapping pair. Two active decisions that disagree about the same
    model, screen, or endpoint is a hard stop: ask the owner which supersedes.
 3. **Write `DESIGN.md`** in the flow-reference skeleton. Rules:
+   - `Slice ledger` is carried from `brief.md` (refined by anything the audit
+     deferred): all four buckets — `In slice`, `Deferred`, `Rejected`,
+     `Trigger to split` — each as a labelled line. It is the source the next
+     two bullets derive from.
+   - `Out of scope` and `Rejected alternatives` are derived views of the
+     ledger: deferred frames/flows → `Out of scope` (name deferred frames in
+     backticks); dropped slices/approaches and `decisions.md` losers →
+     `Rejected alternatives`.
    - Every field in Model changes and New models has exactly one `Kind` and a
      `Source` (`stored` → the row; `populated` → the path, e.g. `Station.name`).
+   - `Omitted properties` records the fields the audit considered and left out
+     (from `REVIEW.md`'s Data-complexity notes), one row each with why. When
+     the design adds any field, this table must have at least one real row;
+     when it adds none, say so.
    - Every endpoint gets a `### METHOD path` block with real request and
      response JSON copied from the shapes in the cited `ENDPOINTS.md` where
      the endpoint exists, or `no body` on the line when that is the truth.
    - Every frame in `pen-nodes.json` is a "Design frames" row or is named in
      backticks under "Out of scope".
    - "Last exported" = the date part of `pen-nodes.json` `exportedAt`.
-   - Rejected alternatives come from `decisions.md` losers and the review's
-     obvious findings that were resolved by the owner choosing otherwise.
    - "Open questions" stays empty; anything unresolved becomes a `decisions.md`
      question for the owner now, not a note.
 4. **Hard checks:**

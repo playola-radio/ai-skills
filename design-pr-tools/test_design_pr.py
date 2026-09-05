@@ -155,6 +155,12 @@ DESIGN_GOOD = textwrap.dedent("""\
     ## Summary
     Foo lets curators do a thing.
 
+    ## Slice ledger
+    - In slice: Create foo on the station page
+    - Deferred: Bulk foo import (future map)
+    - Rejected: Storing foo on the category
+    - Trigger to split: when a slice exceeds ~6 primary frames
+
     ## User flows
     | Flow | Surface | Entry point | Result | Frames |
     |---|---|---|---|---|
@@ -185,6 +191,11 @@ DESIGN_GOOD = textwrap.dedent("""\
     Foo:
       table: foos
     ```
+
+    ## Omitted properties
+    | Model | Considered field | Why omitted |
+    |---|---|---|
+    | Station | fooTagline | derivable from Foo.name; no UI need this slice |
 
     ## Data invariants
     | Invariant | Enforced by | Failure if violated |
@@ -279,7 +290,7 @@ class CheckTest(unittest.TestCase):
 
     def _drop_model_endpoint_sections(self):
         text = read_file(os.path.join(self.feature, "DESIGN.md"))
-        for name in ("Existing models", "Model changes", "New models",
+        for name in ("Existing models", "Model changes", "New models", "Omitted properties",
                      "Data invariants", "Endpoint changes"):
             text = re.sub(rf"## {name}\n.*?(?=\n## )", "", text, flags=re.DOTALL)
         write(os.path.join(self.feature, "DESIGN.md"), text)
@@ -302,7 +313,7 @@ class CheckTest(unittest.TestCase):
         self._drop_model_endpoint_sections()
         self._set_pen_file("design/playola.pen")
         errors = self.errors()
-        for name in ("Existing models", "Model changes", "New models",
+        for name in ("Existing models", "Model changes", "New models", "Omitted properties",
                      "Data invariants", "Endpoint changes"):
             self.assertIn(f"DESIGN.md: missing section '{name}'", errors)
 
@@ -415,6 +426,96 @@ class CheckTest(unittest.TestCase):
     def test_superseded_entry_left_active_fails(self):
         write(os.path.join(self.feature, "decisions.md"), DECISIONS.replace("Status: superseded", "Status: active"))
         self.assertTrue(any("D1" in e and "superseded" in e for e in self.errors()))
+
+    def test_slice_ledger_required(self):
+        text = read_file(os.path.join(self.feature, "DESIGN.md"))
+        text = re.sub(r"## Slice ledger\n.*?(?=\n## )", "", text, flags=re.DOTALL)
+        write(os.path.join(self.feature, "DESIGN.md"), text)
+        self.assertIn("DESIGN.md: missing section 'Slice ledger'", self.errors())
+
+    def test_slice_ledger_missing_bucket_fails(self):
+        self.set_design("- Trigger to split: when a slice exceeds ~6 primary frames", "- and nothing else")
+        self.assertTrue(any("Slice ledger" in e and "Trigger to split" in e for e in self.errors()))
+
+    def test_slice_ledger_empty_bucket_fails(self):
+        self.set_design("- In slice: Create foo on the station page", "- In slice:")
+        self.assertTrue(any("Slice ledger" in e and "In slice" in e for e in self.errors()))
+
+    def test_slice_ledger_indented_bucket_does_not_count(self):
+        self.set_design("- Deferred: Bulk foo import (future map)", "  - Deferred: Bulk foo import (future map)")
+        self.assertTrue(any("Slice ledger" in e and "Deferred" in e for e in self.errors()))
+
+    def test_omitted_properties_required(self):
+        text = read_file(os.path.join(self.feature, "DESIGN.md"))
+        text = re.sub(r"## Omitted properties\n.*?(?=\n## )", "", text, flags=re.DOTALL)
+        write(os.path.join(self.feature, "DESIGN.md"), text)
+        self.assertIn("DESIGN.md: missing section 'Omitted properties'", self.errors())
+
+    def test_omitted_properties_needs_rows_when_fields_added(self):
+        self.set_design(
+            "| Station | fooTagline | derivable from Foo.name; no UI need this slice |",
+            "None yet.",
+        )
+        self.assertTrue(any("Omitted properties" in e and "record" in e.lower() for e in self.errors()))
+
+    def test_omitted_properties_row_missing_why_cell_fails(self):
+        # A row that drops the 'Why omitted' cell entirely must not pass — the
+        # recorded rationale is the whole point of the section.
+        self.set_design(
+            "| Station | fooTagline | derivable from Foo.name; no UI need this slice |",
+            "| Station | fooTagline |",
+        )
+        self.assertTrue(any("Omitted properties" in e for e in self.errors()))
+
+    def test_omitted_properties_unrelated_table_does_not_count(self):
+        self.set_design(
+            "| Model | Considered field | Why omitted |\n"
+            "|---|---|---|\n"
+            "| Station | fooTagline | derivable from Foo.name; no UI need this slice |",
+            "| Note |\n|---|\n| unrelated |",
+        )
+        self.assertTrue(any("Omitted properties" in e for e in self.errors()))
+
+    def test_legacy_sources_required_when_brief_replaces_production(self):
+        # REVIEW_CLEAN carries doc `sources` but no `legacy_sources`: generic
+        # doc-reading is not evidence the old app was inspected, so it must fail.
+        write(os.path.join(self.feature, "brief.md"),
+              "# Foo — Design brief\nReplaces production:\n- client EpisodeDetailPage\n")
+        self.assertTrue(any("Replaces production" in e and "legacy_sources" in e for e in self.errors()))
+
+    def test_legacy_sources_detected_across_blank_line_in_brief(self):
+        write(os.path.join(self.feature, "brief.md"),
+              "# Foo — Design brief\nReplaces production:\n\n- client EpisodeDetailPage\n")
+        self.assertTrue(any("legacy_sources" in e for e in self.errors()))
+
+    def test_legacy_sources_none_is_not_a_trigger(self):
+        write(os.path.join(self.feature, "brief.md"),
+              "# Foo — Design brief\nReplaces production:\n- none — greenfield slice\n")
+        self.assertEqual(self.errors(), [])
+
+    def test_legacy_sources_inline_comment_does_not_satisfy(self):
+        # A `legacy_sources:` line trailing an inline comment parses as a truthy
+        # scalar string, not a list of paths — it must not satisfy the gate.
+        write(os.path.join(self.feature, "brief.md"),
+              "# Foo — Design brief\nReplaces production:\n- client EpisodeDetailPage\n")
+        write(os.path.join(self.feature, "REVIEW.md"),
+              REVIEW_CLEAN.replace(
+                  "reviewed_nodes: [bi8Au, wPnEc]\n",
+                  "reviewed_nodes: [bi8Au, wPnEc]\n"
+                  "legacy_sources:            # required only when Replaces production\n"))
+        self.assertTrue(any("legacy_sources" in e for e in self.errors()))
+
+    def test_legacy_sources_present_passes(self):
+        write(os.path.join(self.feature, "brief.md"),
+              "# Foo — Design brief\nReplaces production:\n- client EpisodeDetailPage\n")
+        write(os.path.join(self.feature, "REVIEW.md"),
+              REVIEW_CLEAN.replace(
+                  "reviewed_nodes: [bi8Au, wPnEc]\n",
+                  "reviewed_nodes: [bi8Au, wPnEc]\n"
+                  "legacy_sources:\n"
+                  "  - client/src/Pages/EpisodeDetailPage\n"
+                  "  - server/src/api/episode/controller.ts\n"))
+        self.assertEqual(self.errors(), [])
 
 
 class OverlapTest(unittest.TestCase):

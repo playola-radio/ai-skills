@@ -62,8 +62,16 @@ creates no product screens; the owner drives those afterward. Flow reference:
    touches (frame names + IDs), the surfaces in scope, and the brief's
    constraints verbatim.
 6. Hand control back with exactly: "Describe the first screen." Do not design
-   unprompted. New screens go inside the zone as top-level frames with
-   `placeholder: true` until finished, `clip: true`, and a human-readable name.
+   unprompted. Design **one screen at a time**: draw the screen the owner just
+   described, then stop and wait for the next one — never speculatively
+   generate a whole flow. New screens go inside the zone as top-level frames
+   with `placeholder: true` until finished, `clip: true`, and a human-readable
+   name. Nothing stops you mid-draw, so this is a discipline, not a lock: the
+   audit is instructed to block on it after the fact — it treats more than one
+   new top-level frame since the last reviewed checkpoint as a burst to slice
+   or defer — so racing ahead only creates rework. (The first audit has no
+   prior checkpoint, so the slice's initial screens are reviewed together
+   against the ledger, not caught as a burst.)
 
 ## Next step
 

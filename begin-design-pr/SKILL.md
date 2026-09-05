@@ -29,7 +29,18 @@ happens next, in Pen.app. Flow reference: `~/playola/playola-skills/design-pr-fl
    - **repos** in scope: `playola`, `ios`, or `both`
    - **audience** (who uses it)
    - in scope / out of scope / known constraints (bullets; ask only if not obvious from the description)
-2. Confirm `develop` is current and create the branch:
+2. **Slice it before you branch.** The common failure is designing the whole
+   feature at once, then cutting late by hand. Decompose the feature into
+   vertical slices — each one a thin end-to-end path a user can actually
+   complete (create → act → see result), not a horizontal layer. Pick the
+   first shippable slice; that slice *is* this design PR. Record the rest as
+   the `Slice ledger`: `Deferred` (the future map), `Rejected` (approaches
+   dropped, with why), and a `Trigger to split` (the signal — e.g. ">~6
+   primary frames" — that says stop and cut). If the feature is already one
+   small slice, say so in the ledger; do not invent divisions. When a slice
+   replaces a proven production flow, name that legacy surface under
+   `Replaces production` so the audit inspects the old app before redesigning.
+3. Confirm `develop` is current and create the branch:
 
    ```bash
    git fetch origin develop
@@ -37,18 +48,23 @@ happens next, in Pen.app. Flow reference: `~/playola/playola-skills/design-pr-fl
    ```
 
    `<author>` is the prefix used by existing branches (`git branch -r | head`).
-3. Write `design/features/<slug>/brief.md` in the `brief.md` format from the
-   flow reference. Every field filled; no placeholders.
-4. Commit:
+4. Write `design/features/<slug>/brief.md` in the `brief.md` format from the
+   flow reference. Every field filled; no placeholders. The `Slice ledger`,
+   `Replaces production`, and `Volume assumptions` blocks are required — they
+   carry the slice decision, the legacy-inspection trigger, and the realistic
+   list sizes forward. `Volume assumptions` names the upper bound for every
+   list surface in the slice (design for 100s of rows, not 3-row mock
+   fixtures), or `none` when the slice has no lists.
+5. Commit:
 
    ```bash
    git add design/features/<slug>/brief.md
    git commit -m "design(<slug>): brief"
    ```
-5. Print, exactly:
+6. Print, exactly:
    - the absolute path of `design/<name>.pen` in this worktree
    - "Open Pen.app with the workspace at `<worktree root>` (not `design/`, not the main checkout), open the pen file, then run `begin-pen-session`."
-6. Do not create a PR. Do not run any pen operation. If `repos` is `both`,
+7. Do not create a PR. Do not run any pen operation. If `repos` is `both`,
    remind the owner to run this skill in the other repo with the same slug.
 
 ## Next step

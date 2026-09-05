@@ -193,10 +193,16 @@ def exports_fresh(root, pen_rel, nodes_rel):
 # ---------- DESIGN.md parsing ----------
 
 REQUIRED_SECTIONS = [
-    "Summary", "User flows", "Design frames", "Existing models", "Model changes", "New models",
-    "Data invariants", "Endpoint changes", "Surfaces", "Implementation handoff", "Out of scope",
-    "Rejected alternatives", "Open questions",
+    "Summary", "Slice ledger", "User flows", "Design frames", "Existing models", "Model changes",
+    "New models", "Omitted properties", "Data invariants", "Endpoint changes", "Surfaces",
+    "Implementation handoff", "Out of scope", "Rejected alternatives", "Open questions",
 ]
+
+# The four buckets a Slice ledger must carry. The ledger is the process memory
+# begin-design-pr writes and finish-design-pr derives 'Out of scope' and
+# 'Rejected alternatives' from; without it, "design too much" creeps back
+# because nothing distinguishes a deferred future map from missing coverage.
+SLICE_LEDGER_BUCKETS = ["In slice", "Deferred", "Rejected", "Trigger to split"]
 
 # Placeholder line the template leaves in an empty 'Open questions' section.
 # Only this exact string is ignored; any other text there is a real open question.
@@ -206,7 +212,8 @@ OPEN_QUESTIONS_SENTINEL = "(must be empty before the design PR is opened)"
 # it carries no model or endpoint sections (see design-pr-flow.md "Cross-repo
 # features"). Detected by the iOS canvas filename recorded in pen-nodes.json.
 IOS_OMITTED_SECTIONS = {
-    "Existing models", "Model changes", "New models", "Data invariants", "Endpoint changes",
+    "Existing models", "Model changes", "New models", "Omitted properties",
+    "Data invariants", "Endpoint changes",
 }
 
 
@@ -261,6 +268,67 @@ def kinds_in(body):
         if "Kind" in header and "Field" in header:
             row = dict(zip(header, cells))
             yield row.get("Model", ""), row.get("Field", ""), row.get("Kind", "")
+
+
+def slice_ledger_missing_buckets(body):
+    """Buckets the Slice ledger fails to carry as a non-empty top-level line.
+
+    Each bucket must be its own '- Label: <content>' bullet at column 0 with
+    real content after the colon. An empty label or a nested (indented) bullet
+    is not a recorded decision and does not count.
+    """
+    missing = []
+    for b in SLICE_LEDGER_BUCKETS:
+        if not re.search(rf"(?m)^[-*] +{re.escape(b)}:[ \t]*\S", body):
+            missing.append(b)
+    return missing
+
+
+def omitted_properties_recorded(body):
+    """True when the Omitted properties table has the real columns and a full row.
+
+    The header must declare 'Model', a '...field...' column, and a '...why...'
+    column; one data row must fill all three. Mapping cells by column name (not
+    just 'every present cell is non-empty') rejects both a stray unrelated table
+    and a short row that drops the 'Why omitted' cell — the rationale that is the
+    whole point of the section.
+    """
+    for header, cells in table_rows(body):
+        if "Model" not in header:
+            continue
+        field_col = next((h for h in header if "field" in h.lower()), None)
+        why_col = next((h for h in header if "why" in h.lower()), None)
+        if not (field_col and why_col):
+            continue
+        row = dict(zip(header, cells))
+        if row.get("Model", "").strip() and row.get(field_col, "").strip() and row.get(why_col, "").strip():
+            return True
+    return False
+
+
+def brief_list(text, key):
+    """Real bullets under a 'Key:' block in brief.md.
+
+    Blank lines inside the block are skipped (markdown authors leave one after
+    the label); collection ends at the next non-blank, non-bullet line. A bullet
+    whose first word is 'none'/'n/a' (e.g. 'none — no legacy surface') is empty.
+    """
+    out, collecting = [], False
+    for line in text.splitlines():
+        if re.match(rf"^\s*{re.escape(key)}\s*:\s*$", line):
+            collecting = True
+            continue
+        if collecting:
+            stripped = line.strip()
+            if stripped == "":
+                continue
+            if not stripped.startswith(("-", "*")):
+                break
+            item = stripped[1:].strip()
+            first = re.split(r"[\s—-]", item.lower(), maxsplit=1)[0] if item else ""
+            if item and first not in ("none", "n/a"):
+                out.append(item)
+    return out
 
 
 def endpoint_bodies(body):
@@ -337,6 +405,17 @@ def run_checks(feature_dir):
     if header.get("blocking_findings", 1) != 0:
         errors.append(f"REVIEW.md blocking_findings is {header.get('blocking_findings')!r}, must be 0")
 
+    brief_path = os.path.join(feature_dir, "brief.md")
+    if os.path.exists(brief_path) and brief_list(read(brief_path), "Replaces production"):
+        legacy = header.get("legacy_sources")
+        # Must be a parsed non-empty list of actual paths. A `legacy_sources:`
+        # line trailing an inline comment parses as a truthy scalar string, so a
+        # plain truthiness check would let an entry-less header through.
+        if not (isinstance(legacy, list) and any(str(x).strip() for x in legacy)):
+            errors.append("brief.md declares 'Replaces production' but REVIEW.md 'legacy_sources' is "
+                          "empty; the audit must record the legacy surface it inspected "
+                          "(model/service/route/tests/docs) before redesigning it")
+
     decisions_path = os.path.join(feature_dir, "decisions.md")
     if os.path.exists(decisions_path):
         entries = parse_decisions(read(decisions_path))
@@ -379,6 +458,18 @@ def run_checks(feature_dir):
             errors.append(f"DESIGN.md: missing section '{name}'")
         elif name != "Open questions" and not secs[name].strip():
             errors.append(f"DESIGN.md: section '{name}' is empty")
+
+    ledger = secs.get("Slice ledger", "")
+    if ledger.strip():
+        for bucket in slice_ledger_missing_buckets(ledger):
+            errors.append(f"DESIGN.md 'Slice ledger': missing '{bucket}:' bucket")
+
+    if "Omitted properties" in required:
+        model_fields = any(kinds_in(secs.get("Model changes", ""))) or any(kinds_in(secs.get("New models", "")))
+        omitted = secs.get("Omitted properties", "")
+        if model_fields and omitted.strip() and not omitted_properties_recorded(omitted):
+            errors.append("DESIGN.md 'Omitted properties': fields are being added, so record at least "
+                          "one omitted/rejected property row (Model | Considered field | Why omitted)")
 
     for token in ("TBD", "TODO"):
         if re.search(rf"\b{token}\b", text):
