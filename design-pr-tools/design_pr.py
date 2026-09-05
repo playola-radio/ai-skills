@@ -106,14 +106,18 @@ def compute_state(feature_dir):
         return result("designing", "begin-pen-session", "pen", "brief.md exists, no REVIEW.md; design, then audit-pen-designs")
     header = parse_front_matter(read(os.path.join(feature_dir, "REVIEW.md")))
     status = header.get("audit_status")
-    if status != "clean":
-        return result("fixing", "audit-pen-designs", "pen", f"audit_status is {status!r}; fix the canvas and re-run the audit")
+    blocking = header.get("blocking_findings", 1)
+    tradeoffs = header.get("tradeoffs_open", 1)
+    if status != "clean" or blocking != 0 or tradeoffs != 0:
+        return result("fixing", "audit-pen-designs", "pen",
+                      f"audit not clean (audit_status={status!r}, blocking_findings={blocking!r}, "
+                      f"tradeoffs_open={tradeoffs!r}); fix the canvas and re-run the audit")
     if not exists(feature_dir, "DESIGN.md"):
         return result("ready_for_spec", "finish-design-pr", "repo", "audit clean, no DESIGN.md")
-    exported_at = None
-    if exists(feature_dir, "pen-nodes.json"):
-        with open(os.path.join(feature_dir, "pen-nodes.json")) as f:
-            exported_at = json.load(f).get("exportedAt")
+    if not exists(feature_dir, "pen-nodes.json"):
+        return result("spec_stale", "export-pen-designs", "pen", "DESIGN.md exists but pen-nodes.json is missing; export the canvas")
+    with open(os.path.join(feature_dir, "pen-nodes.json")) as f:
+        exported_at = json.load(f).get("exportedAt")
     last = _last_exported(read(os.path.join(feature_dir, "DESIGN.md")))
     if exported_at and (last is None or last < exported_at[:10]):
         return result("spec_stale", "finish-design-pr", "repo", f"DESIGN.md Last exported {last} is older than pen-nodes.json exportedAt {exported_at}")
@@ -189,6 +193,10 @@ REQUIRED_SECTIONS = [
     "Data invariants", "Endpoint changes", "Surfaces", "Implementation handoff", "Out of scope",
     "Rejected alternatives", "Open questions",
 ]
+
+# Placeholder line the template leaves in an empty 'Open questions' section.
+# Only this exact string is ignored; any other text there is a real open question.
+OPEN_QUESTIONS_SENTINEL = "(must be empty before the design PR is opened)"
 
 # The iOS DESIGN.md owns flows/frames/surfaces and links the monorepo contract;
 # it carries no model or endpoint sections (see design-pr-flow.md "Cross-repo
@@ -358,9 +366,8 @@ def run_checks(feature_dir):
         if re.search(rf"\b{token}\b", text):
             errors.append(f"DESIGN.md: contains placeholder '{token}'")
 
-    open_q = "\n".join(l for l in secs.get("Open questions", "").splitlines()
-                       if l.strip() and not l.strip().startswith("(must be empty"))
-    if open_q.strip():
+    open_q = secs.get("Open questions", "").replace(OPEN_QUESTIONS_SENTINEL, "").strip()
+    if open_q:
         errors.append("DESIGN.md: 'Open questions' must be empty before the design PR is opened")
 
     frames = design_frames(secs.get("Design frames", ""))

@@ -120,6 +120,21 @@ class StateTest(unittest.TestCase):
         s = design_pr.compute_state(self.feature)
         self.assertEqual((s["state"], s["next"], s["agent"]), ("spec_stale", "finish-design-pr", "repo"))
 
+    def test_clean_but_inconsistent_review_is_fixing(self):
+        write(os.path.join(self.feature, "brief.md"), "x")
+        write(os.path.join(self.feature, "REVIEW.md"), REVIEW_CLEAN.replace("blocking_findings: 0", "blocking_findings: 1"))
+        write(os.path.join(self.feature, "pen-nodes.json"), json.dumps({"exportedAt": "2026-09-04T10:00:00Z", "frames": []}))
+        write(os.path.join(self.feature, "DESIGN.md"), "# Foo — Design\nLast exported: 2026-09-04\n")
+        s = design_pr.compute_state(self.feature)
+        self.assertEqual((s["state"], s["next"], s["agent"]), ("fixing", "audit-pen-designs", "pen"))
+
+    def test_design_without_nodes_routes_to_export_not_ship(self):
+        write(os.path.join(self.feature, "brief.md"), "x")
+        write(os.path.join(self.feature, "REVIEW.md"), REVIEW_CLEAN)
+        write(os.path.join(self.feature, "DESIGN.md"), "# Foo — Design\nLast exported: 2026-09-04\n")
+        s = design_pr.compute_state(self.feature)
+        self.assertEqual((s["state"], s["next"], s["agent"]), ("spec_stale", "export-pen-designs", "pen"))
+
     def test_current_design_is_ready_to_ship(self):
         write(os.path.join(self.feature, "brief.md"), "x")
         write(os.path.join(self.feature, "REVIEW.md"), REVIEW_CLEAN)
@@ -336,6 +351,13 @@ class CheckTest(unittest.TestCase):
 
     def test_open_question_fails(self):
         self.set_design("(must be empty before the design PR is opened)", "(must be empty before the design PR is opened)\n- Should foos expire?")
+        self.assertTrue(any("Open questions" in e for e in self.errors()))
+
+    def test_open_question_appended_to_sentinel_line_fails(self):
+        self.set_design(
+            "(must be empty before the design PR is opened)",
+            "(must be empty before the design PR is opened) Who decides genre permissions?",
+        )
         self.assertTrue(any("Open questions" in e for e in self.errors()))
 
     def test_placeholder_fails(self):
