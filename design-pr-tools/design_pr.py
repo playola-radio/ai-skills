@@ -136,6 +136,10 @@ def main(argv):
         for key in ("state", "next", "agent", "reason"):
             print(f"{key.upper()}={s[key]}")
         return 0
+    # Overlaps are advisory, not a hard failure: the script cannot tell a real
+    # contradiction from two complementary decisions on the same target, so the
+    # "two active decisions that disagree is a hard stop" rule (finish-design-pr
+    # step 3) stays a human judgment. Do not promote this into an error.
     for a, b, target in overlaps_in(feature_dir):
         print(f"OVERLAP: {a} and {b} both affect {target}; read both")
     errors = run_checks(feature_dir)
@@ -247,7 +251,8 @@ def design_frames(body):
         if "Node ID" not in header or "PNG" not in header:
             continue
         row = dict(zip(header, cells))
-        frames.append({"id": row["Node ID"].strip("`"), "png": row["PNG"].strip("`")})
+        node_id, png = row.get("Node ID", "").strip("`"), row.get("PNG", "").strip("`")
+        frames.append({"id": node_id, "png": png, "malformed": not (node_id and png)})
     return frames
 
 
@@ -274,20 +279,26 @@ def endpoint_bodies(body):
             yield title.strip(), side, fence, said_no_body
 
 
+def _normalize_endpoint(text):
+    """Compare endpoints ignoring cosmetic differences (backticks, case, spacing)."""
+    return re.sub(r"\s+", " ", text.replace("`", "")).strip().upper()
+
+
 def endpoint_table_rows(body):
-    """Yield 'METHOD path' for each row of the Endpoint changes table."""
+    """Yield ('METHOD path' display, normalized) for each Endpoint changes row."""
     for header, cells in table_rows(body):
         if "Method" not in header or "Path" not in header:
             continue
         row = dict(zip(header, cells))
         method, path = row.get("Method", "").strip(), row.get("Path", "").strip()
         if method and path:
-            yield f"{method} {path}"
+            display = f"{method} {path}"
+            yield display, _normalize_endpoint(display)
 
 
 def endpoint_detail_titles(body):
-    """The set of '### METHOD path' detail-block headings."""
-    return {block.partition("\n")[0].strip()
+    """Normalized set of '### METHOD path' detail-block headings."""
+    return {_normalize_endpoint(block.partition("\n")[0])
             for block in re.split(r"^### ", body, flags=re.M)[1:]}
 
 
@@ -349,8 +360,15 @@ def run_checks(feature_dir):
     node_ids = {f["id"] for f in nodes.get("frames", [])}
     pen_rel = nodes.get("penFile", "design/playola.pen")
     nodes_rel = os.path.relpath(os.path.realpath(nodes_path), root) if root else ""
-    if root and not exports_fresh(root, pen_rel, nodes_rel):
-        errors.append(f"exports are stale: {pen_rel} changed after pen-nodes.json was written; run export-pen-designs")
+    if root:
+        # Freshness is the spec's anti-theater keystone, so it must not be
+        # disable-able by a wrong `penFile`. Resolve the real canvas from the
+        # tracked repo (glob) instead of trusting the field; only fall back to
+        # the declared path when the glob is empty or ambiguous.
+        tracked_pens = _git(root, "ls-files", "--", "design/*.pen").splitlines()
+        fresh_pen = tracked_pens[0] if len(tracked_pens) == 1 else pen_rel
+        if not exports_fresh(root, fresh_pen, nodes_rel):
+            errors.append(f"exports are stale: {fresh_pen} changed after pen-nodes.json was written; run export-pen-designs")
 
     text = read(design_path)
     secs = sections(text)
@@ -373,11 +391,14 @@ def run_checks(feature_dir):
     frames = design_frames(secs.get("Design frames", ""))
     out_of_scope_ids = _ids_in(secs.get("Out of scope", ""))
     for frame in frames:
+        if frame["malformed"]:
+            errors.append("DESIGN.md 'Design frames': a row is missing its Node ID or PNG cell")
+            continue
         if frame["id"] not in node_ids:
             errors.append(f"DESIGN.md frame {frame['id']} is not in pen-nodes.json")
         if not os.path.exists(os.path.join(feature_dir, frame["png"])):
             errors.append(f"DESIGN.md frame {frame['id']}: PNG {frame['png']} not found on disk")
-    design_ids = {f["id"] for f in frames}
+    design_ids = {f["id"] for f in frames if not f["malformed"]}
     for node_id in sorted(node_ids - design_ids - out_of_scope_ids):
         errors.append(f"pen-nodes.json frame {node_id} is neither in 'Design frames' nor listed under 'Out of scope'")
 
@@ -388,9 +409,9 @@ def run_checks(feature_dir):
 
     endpoint_body = secs.get("Endpoint changes", "")
     detail_titles = endpoint_detail_titles(endpoint_body)
-    for row in endpoint_table_rows(endpoint_body):
-        if row not in detail_titles:
-            errors.append(f"DESIGN.md Endpoint changes: table lists '{row}' but has no '### {row}' detail block")
+    for display, normalized in endpoint_table_rows(endpoint_body):
+        if normalized not in detail_titles:
+            errors.append(f"DESIGN.md Endpoint changes: table lists '{display}' but has no '### {display}' detail block")
 
     for title, side, fence, said_no_body in endpoint_bodies(endpoint_body):
         if said_no_body:

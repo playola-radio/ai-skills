@@ -34,6 +34,7 @@ python3 ~/playola/playola-skills/design-pr-tools/design_pr.py state design/featu
 | `fixing` | `audit_status` is `blocked` or `owner_decisions_needed` | edit canvas, `audit-pen-designs` | pen |
 | `ready_for_spec` | `audit_status: clean`, no `DESIGN.md` | `finish-design-pr` | repo |
 | `spec_stale` | `DESIGN.md` "Last exported" older than `pen-nodes.json` `exportedAt` | `finish-design-pr` | repo |
+| `spec_stale` | `DESIGN.md` present but `pen-nodes.json` missing | `export-pen-designs` | pen |
 | `ready_to_ship` | `DESIGN.md` current | `/ship`, then `/fix-review` | repo |
 
 If AGENT is not the agent you are running in, say so and name the agent to

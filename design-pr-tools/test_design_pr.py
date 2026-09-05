@@ -317,6 +317,30 @@ class CheckTest(unittest.TestCase):
         )
         self.assertTrue(any("GET /v1/foos/:id" in e and "detail block" in e for e in self.errors()))
 
+    def test_short_design_frames_row_fails_without_crashing(self):
+        self.set_design(
+            "| Overview | Proposed | design/playola.pen | `bi8Au` | exports/overview--bi8Au.png | |",
+            "| Overview | Proposed | design/playola.pen | `bi8Au` |",
+        )
+        errors = self.errors()  # must not raise KeyError
+        self.assertTrue(any("Design frames" in e and "missing" in e for e in errors))
+
+    def test_wrong_penfile_does_not_disable_freshness(self):
+        # A misspelled penFile must not silently pass a stale export. Commit a
+        # typo'd penFile (clean exports), then dirty the real canvas: the gate
+        # must still flag staleness by resolving the real design/*.pen.
+        nodes = dict(NODES_GOOD, penFile="design/typo.pen")
+        write(os.path.join(self.feature, "pen-nodes.json"), json.dumps(nodes))
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "typo penFile")
+        write(os.path.join(self.repo, "design", "playola.pen"), '{"v": 9}')
+        self.assertTrue(any("exports are stale" in e for e in self.errors()))
+
+    def test_backticked_endpoint_path_matches_detail_block(self):
+        self.set_design("| POST | /v1/foos | required | create | New |",
+                        "| POST | `/v1/foos` | required | create | New |")
+        self.assertFalse(any("detail block" in e for e in self.errors()))
+
     def test_review_not_clean_fails(self):
         write(os.path.join(self.feature, "REVIEW.md"), REVIEW_CLEAN.replace("audit_status: clean", "audit_status: blocked"))
         self.assertTrue(any("audit_status" in e for e in self.errors()))
