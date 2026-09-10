@@ -274,6 +274,6 @@ that repo. Nothing is copied across repos. Implementation needs both merged.
 
 ## Skipping the design PR
 
-`build-feature` and `orchestrate-feature` require a merged `DESIGN.md` for
-features with UX. `--no-design <reason>` skips it for tiny changes; the reason
+Implementation sessions (`superpowers:executing-plans` or `orchestrate-feature`)
+require a merged `DESIGN.md` for features with UX. `--no-design <reason>` skips it for tiny changes; the reason
 is recorded in the implementation PR body.

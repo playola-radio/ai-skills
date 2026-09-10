@@ -31,6 +31,7 @@ Removes only symlinks pointing into this repo; leaves your other skills alone.
 | `audit-pen-designs` | Pen.app | Audit proposal frames against the codebase on five dimensions; writes `REVIEW.md` / `decisions.md`; never edits the canvas |
 | `export-pen-designs` | Pen.app | PNGs + `pen-nodes.json` + `DESIGN_STATUS.md` rows; `--status` for transitions |
 | `finish-design-pr` | repo agent | Write `DESIGN.md`, run the hard checks and a Codex artifact review, open it |
+| `design-feature` | repo agent | Full feature design: scope → pen.dev visuals → data-layer contracts → adversarial review → implementation plan, shipped as a `design/features/{slug}/` PR |
 | `create-endpoint` | repo agent | REST endpoint with integration tests + OpenAPI docs |
 | `create-lib` | repo agent | Server library functions with TDD, one function at a time |
 | `create-model` | repo agent | Sequelize model with migration, types, associations, tests |
