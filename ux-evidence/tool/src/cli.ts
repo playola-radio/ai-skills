@@ -32,7 +32,7 @@ export interface CliCommands {
 }
 
 const USAGE = [
-  "usage:",
+  "usage: ux-evidence [--repo <path> | -C <path>] <command>",
   "  ux-evidence record --case <id> [--allow-identical]",
   "  ux-evidence verify",
   "  ux-evidence publish --pr <number>",
@@ -58,6 +58,41 @@ function errorExitCode(error: unknown): number {
   return typeof code === "number" ? code : 1;
 }
 
+const REPO_FLAGS: readonly string[] = ["--repo", "-C"];
+
+export function parseInvocation(
+  argv: readonly string[],
+  cwd: string,
+): { repoRoot: string; args: string[] } | undefined {
+  let repoRoot: string | undefined;
+  let index = 0;
+  while (REPO_FLAGS.includes(argv[index] ?? "")) {
+    const value = argv[index + 1];
+    if (value === undefined) return undefined;
+    const selected = resolve(cwd, value);
+    if (repoRoot !== undefined && repoRoot !== selected) return undefined;
+    repoRoot = selected;
+    index += 2;
+  }
+  return { repoRoot: repoRoot ?? resolve(cwd), args: argv.slice(index) };
+}
+
+function printUsage(print: (line: string) => void): number {
+  for (const line of USAGE) print(line);
+  return 2;
+}
+
+export async function run(
+  argv: readonly string[],
+  cwd: string,
+  wire: (repoRoot: string) => CliCommands,
+  print: (line: string) => void,
+): Promise<number> {
+  const invocation = parseInvocation(argv, cwd);
+  if (invocation === undefined) return printUsage(print);
+  return main(invocation.args, wire(invocation.repoRoot), print);
+}
+
 export async function main(
   argv: readonly string[],
   commands: CliCommands,
@@ -67,7 +102,7 @@ export async function main(
   const allowIdentical = command === "record" && allArgs.includes("--allow-identical");
   const rest = allowIdentical ? allArgs.filter((arg) => arg !== "--allow-identical") : allArgs;
   const flags = parseFlags(rest);
-  const usage = (): number => { for (const line of USAGE) print(line); return 2; };
+  const usage = (): number => printUsage(print);
   if (flags === undefined) return usage();
 
   try {
@@ -123,8 +158,7 @@ async function exists(path: string): Promise<boolean> {
   try { await access(path); return true; } catch { return false; }
 }
 
-export function wireCommands(): CliCommands {
-  const repoRoot = resolve(import.meta.dirname, "..", "..");
+export function wireCommands(repoRoot: string): CliCommands {
   const readTextFile = (path: string) => readFile(path, "utf8");
   const makeDirectory = async (path: string) => { await mkdir(path, { recursive: true }); };
   const checksumFile = async (path: string) => createHash("sha256").update(await readFile(path)).digest("hex");

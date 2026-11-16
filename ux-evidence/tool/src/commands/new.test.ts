@@ -27,6 +27,10 @@ describe("renderNewCase", () => {
     expect(() => renderNewCase({ ...input, id: "Bad_Id" })).toThrow("case id must be lowercase letters, digits and hyphens");
   });
 
+  it("newFlowUsesPortableTypeImport: the flow imports its types through the qa/ux/.tool link", () => {
+    expect(renderNewCase(input).flowSource.split("\n")[0]).toBe('import type { DemoContext } from "../.tool/src/flow-api.ts";');
+  });
+
   it("includes a shot line for visual cases only", () => {
     expect(renderNewCase(input).flowSource).toContain("shot(");
     expect(renderNewCase({ ...input, classification: "functional" }).flowSource).not.toContain("shot(");

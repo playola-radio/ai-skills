@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { main, makeEvidenceTemporaryDirectory, type CliCommands } from "./cli.ts";
+import { main, makeEvidenceTemporaryDirectory, parseInvocation, run, type CliCommands } from "./cli.ts";
 import type { VerificationReport } from "./commands/verify.ts";
 
 const currentReport: VerificationReport = {
@@ -103,6 +103,43 @@ describe("main", () => {
   it("exits 1 for a plain error", async () => {
     commands.publish = vi.fn(async () => { throw new Error("nope"); });
     expect(await main(["publish", "--pr", "1"], commands, print)).toBe(1);
+  });
+});
+
+describe("repository selection", () => {
+  it("repoFlagRoutesOutsideTool: --repo selects the repository the command acts on", async () => {
+    const wire = vi.fn((_repoRoot: string) => commands);
+    expect(await run(["--repo", "/tmp/app repo", "verify"], "/elsewhere", wire, print)).toBe(0);
+    expect(wire).toHaveBeenCalledWith("/tmp/app repo");
+    expect(commands.verify).toHaveBeenCalled();
+  });
+
+  it("shortRepoFlagMatchesLong: -C yields the same root as --repo", () => {
+    expect(parseInvocation(["-C", "/tmp/app", "verify"], "/elsewhere")).toEqual({ repoRoot: "/tmp/app", args: ["verify"] });
+    expect(parseInvocation(["--repo", "/tmp/app", "verify"], "/elsewhere")).toEqual({ repoRoot: "/tmp/app", args: ["verify"] });
+  });
+
+  it("missingRepoUsesCwd: without a flag the invocation directory is the repository", async () => {
+    const wire = vi.fn((_repoRoot: string) => commands);
+    expect(await run(["verify"], "/tmp/app", wire, print)).toBe(0);
+    expect(wire).toHaveBeenCalledWith("/tmp/app");
+  });
+
+  it("conflictingRepoFlagsFail: different --repo and -C values exit 2 with usage", async () => {
+    const wire = vi.fn((_repoRoot: string) => commands);
+    expect(await run(["--repo", "/tmp/a", "-C", "/tmp/b", "verify"], "/elsewhere", wire, print)).toBe(2);
+    expect(printed[0]).toContain("usage:");
+    expect(wire).not.toHaveBeenCalled();
+  });
+
+  it("resolves a relative path against the invocation directory", () => {
+    expect(parseInvocation(["-C", "app", "verify"], "/tmp")).toEqual({ repoRoot: "/tmp/app", args: ["verify"] });
+  });
+
+  it("exits 2 when the flag has no value", async () => {
+    const wire = vi.fn((_repoRoot: string) => commands);
+    expect(await run(["--repo"], "/elsewhere", wire, print)).toBe(2);
+    expect(wire).not.toHaveBeenCalled();
   });
 });
 

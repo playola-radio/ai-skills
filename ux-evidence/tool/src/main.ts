@@ -6,5 +6,6 @@ if (versionError !== undefined) {
   process.exit(1);
 }
 
-const { main, wireCommands } = await import("./cli.ts");
-process.exit(await main(process.argv.slice(2), wireCommands(), console.log));
+// npm run starts scripts in the tool's folder; INIT_CWD is where the user ran it.
+const { run, wireCommands } = await import("./cli.ts");
+process.exit(await run(process.argv.slice(2), process.env.INIT_CWD ?? process.cwd(), wireCommands, console.log));
