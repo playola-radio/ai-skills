@@ -196,6 +196,7 @@ export async function recordEvidenceCase(
       ...(identical ? { identical: true as const } : {}),
     };
 
+    await removeRun();
     await dependencies.writeTextFile(posix.join(artifactDirectory, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
     await dependencies.writeTextFile(posix.join(artifactDirectory, "comment.md"), renderEvidenceComment(result).markdown);
     return result;

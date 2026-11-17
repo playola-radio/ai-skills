@@ -157,6 +157,12 @@ describe("recordEvidenceCase", () => {
     expect(ctx.deps.removeDirectory).toHaveBeenCalledTimes(1);
   });
 
+  it("writes no results when the run directory cannot be removed", async () => {
+    ctx.deps.removeDirectory.mockRejectedValueOnce(new Error("EACCES"));
+    await expect(recordEvidenceCase(input, ctx.deps)).rejects.toThrow("EACCES");
+    expect(ctx.writtenPaths).toEqual([]);
+  });
+
   it("skips base only when policy is not-applicable", async () => {
     ctx = build({ manifest: afterOnlyManifest });
     const result = await recordEvidenceCase(input, ctx.deps);

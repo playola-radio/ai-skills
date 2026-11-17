@@ -144,9 +144,24 @@ function exposeDotfiles(path: string): string {
   return path.split("/").map((segment) => (segment.startsWith(".") ? `${HIDDEN_DOT}${segment.slice(1)}` : segment)).join("/");
 }
 
+// In a glob, a segment can also start right after "{" or "," inside a brace alternative.
+function exposeGlobDotfiles(glob: string): string {
+  let braceDepth = 0;
+  let previous = "/";
+  let exposed = "";
+  for (const character of glob) {
+    const startsSegment = previous === "/" || (braceDepth > 0 && (previous === "{" || previous === ","));
+    exposed += character === "." && startsSegment ? HIDDEN_DOT : character;
+    if (character === "{") braceDepth += 1;
+    if (character === "}" && braceDepth > 0) braceDepth -= 1;
+    previous = character;
+  }
+  return exposed;
+}
+
 function matchesAny(path: string, globs: readonly string[]): boolean {
   const subject = exposeDotfiles(path);
-  return globs.some((glob) => posix.matchesGlob(subject, exposeDotfiles(glob)));
+  return globs.some((glob) => posix.matchesGlob(subject, exposeGlobDotfiles(glob)));
 }
 
 export function isIgnoredPath(path: string, config: EvidenceConfig): boolean {

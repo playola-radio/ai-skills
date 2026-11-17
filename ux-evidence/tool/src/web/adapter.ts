@@ -44,16 +44,17 @@ export function renderWebFlow(input: NewCaseInput): string {
 }
 
 export function createWebAdapter(dependencies: WebAdapterDependencies): PlatformAdapter {
-  const resolveDump = () => resolveDumpMetadata({
-    environment: dependencies.environment,
-    homeDirectory: dependencies.homeDirectory,
-    stat: dependencies.stat,
-  });
+  let dumpPath: string | undefined;
 
   return {
     async preflight(context) {
       webConfig(context);
-      const dump = await resolveDump();
+      const dump = await resolveDumpMetadata({
+        environment: dependencies.environment,
+        homeDirectory: dependencies.homeDirectory,
+        stat: dependencies.stat,
+      });
+      dumpPath = dump.path;
       return { environment: { dump }, tools: await dependencies.toolVersions() };
     },
 
@@ -62,7 +63,8 @@ export function createWebAdapter(dependencies: WebAdapterDependencies): Platform
       const { repoRoot, manifest, caseDirectory, artifactDirectory, runDirectory, cleanup } = context;
       const startPath = manifest.startPath;
       if (startPath === undefined) throw new Error(`${manifest.id}: web cases need a startPath`);
-      const dump = await resolveDump();
+      if (dumpPath === undefined) throw new Error("the web adapter must run preflight before prepare");
+      const preparedDumpPath = dumpPath;
       const stackDependencies: StackDependencies = {
         ...dependencies.stackDependencies,
         makeTemporaryDirectory: (prefix) => dependencies.makeTemporaryDirectory(runDirectory, prefix),
@@ -75,7 +77,7 @@ export function createWebAdapter(dependencies: WebAdapterDependencies): Platform
             && await dependencies.fileExists(join(caseDirectory, "flow.base.ts"));
           const flow = await dependencies.loadEvidenceFlow(selectFlowPath({ caseDirectory, revision, baseOverrideExists }));
           return dependencies.withRevisionStack(
-            { repoRoot, revision, commit: context.commits[revision], dumpPath: dump.path, runId: basename(runDirectory) },
+            { repoRoot, revision, commit: context.commits[revision], dumpPath: preparedDumpPath, runId: basename(runDirectory) },
             stackDependencies,
             async (stack) => {
               const capture = await dependencies.captureRevision({

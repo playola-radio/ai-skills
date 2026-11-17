@@ -128,6 +128,11 @@ describe("path policy", () => {
     expect(isIgnoredPath("client/.notes.md", web())).toBe(true);
   });
 
+  it("matches dotfile names inside brace alternatives", () => {
+    const config = { ...web(), relevant: ["client/{.config,src}/**"] };
+    expect([isRelevantPath("client/.config/theme.json", config), isRelevantPath("client/src/a.ts", config)]).toEqual([true, true]);
+  });
+
   it("treats paths outside both lists as irrelevant", () => {
     expect(isRelevantPath("docs/a.ts", web())).toBe(false);
   });

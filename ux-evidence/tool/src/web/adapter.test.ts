@@ -43,7 +43,9 @@ function build(options: { dumpMissing?: boolean; baseOverride?: boolean } = {}) 
     })),
     loadEvidenceFlow: vi.fn(async (_path: string) => flow),
   };
-  return { deps, adapter: createWebAdapter(deps as unknown as WebAdapterDependencies), stackCalls };
+  const adapter = createWebAdapter(deps as unknown as WebAdapterDependencies);
+  const prepare = async () => { await adapter.preflight(context); return adapter.prepare(context); };
+  return { deps, adapter, prepare, stackCalls };
 }
 
 describe("createWebAdapter preflight", () => {
@@ -70,8 +72,8 @@ describe("createWebAdapter preflight", () => {
 
 describe("createWebAdapter capture", () => {
   it("starts one stack per revision at that revision's commit, named after the run", async () => {
-    const { adapter, stackCalls } = build();
-    const run = await adapter.prepare(context);
+    const { prepare, stackCalls } = build();
+    const run = await prepare();
     await run.capture("base");
     await run.capture("head");
     expect(stackCalls.map((call) => call.request)).toEqual([
@@ -81,16 +83,16 @@ describe("createWebAdapter capture", () => {
   });
 
   it("makes stack temporary folders inside the run directory and registers cleanup with the run", async () => {
-    const { adapter, stackCalls } = build();
-    await (await adapter.prepare(context)).capture("head");
+    const { prepare, stackCalls } = build();
+    await (await prepare()).capture("head");
     const { dependencies } = stackCalls[0]!;
     await expect(dependencies.makeTemporaryDirectory("playola-ux-wt-")).resolves.toBe(`${context.runDirectory}/playola-ux-wt-x`);
     expect(dependencies.cleanup).toBe(context.cleanup);
   });
 
   it("captures with the stack's client URL, the case start path and the configured browser settings", async () => {
-    const { adapter, deps } = build();
-    await (await adapter.prepare(context)).capture("base");
+    const { prepare, deps } = build();
+    await (await prepare()).capture("base");
     expect(deps.captureRevision).toHaveBeenCalledWith({
       revision: "base", classification: "visual", clientUrl: "http://client-base", startPath: "/stations",
       flow, outputDirectory: "/repo/.qa-artifacts/c", settings: WEB_CONFIG.web,
@@ -98,37 +100,41 @@ describe("createWebAdapter capture", () => {
   });
 
   it("returns the screenshots with the stack's warnings", async () => {
-    const { adapter } = build();
-    const capture = await (await adapter.prepare(context)).capture("head");
+    const { prepare } = build();
+    const capture = await (await prepare()).capture("head");
     expect(capture.warnings).toEqual(["head warning"]);
     expect([...capture.screenshots.keys()]).toEqual(["main"]);
   });
 
   it("loads both flows from the current checkout", async () => {
-    const { adapter, deps } = build();
-    const run = await adapter.prepare(context);
+    const { prepare, deps } = build();
+    const run = await prepare();
     await run.capture("base");
     await run.capture("head");
     expect(deps.loadEvidenceFlow.mock.calls.map(([path]) => path)).toEqual(["/repo/qa/ux/c/flow.ts", "/repo/qa/ux/c/flow.ts"]);
   });
 
   it("uses flow.base.ts for base when it exists", async () => {
-    const { adapter, deps } = build({ baseOverride: true });
-    const run = await adapter.prepare(context);
+    const { prepare, deps } = build({ baseOverride: true });
+    const run = await prepare();
     await run.capture("base");
     await run.capture("head");
     expect(deps.loadEvidenceFlow.mock.calls.map(([path]) => path)).toEqual(["/repo/qa/ux/c/flow.base.ts", "/repo/qa/ux/c/flow.ts"]);
   });
 
   it.each(["base", "head"] as const)("names the case and %s revision when capture fails", async (revision) => {
-    const { adapter, deps } = build();
+    const { prepare, deps } = build();
     deps.captureRevision.mockRejectedValueOnce(new Error("locator timed out"));
-    await expect((await adapter.prepare(context)).capture(revision)).rejects.toThrow(`c: ${revision} capture failed: locator timed out`);
+    await expect((await prepare()).capture(revision)).rejects.toThrow(`c: ${revision} capture failed: locator timed out`);
+  });
+
+  it("refuses to prepare before preflight has found the dump", async () => {
+    await expect(build().adapter.prepare(context)).rejects.toThrow("the web adapter must run preflight before prepare");
   });
 
   it("disposes more than once without error", async () => {
-    const { adapter } = build();
-    const run = await adapter.prepare(context);
+    const { prepare } = build();
+    const run = await prepare();
     await run.dispose();
     await expect(run.dispose()).resolves.toBeUndefined();
   });
