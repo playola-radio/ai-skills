@@ -41,3 +41,19 @@ export async function composeComparisonPng(input: {
   ], {});
   assertSucceeded(result, `ffmpeg failed composing ${destinationPath}`);
 }
+
+async function decodedFingerprint(path: string, exec: Exec): Promise<string> {
+  const result = await exec("ffmpeg", [
+    "-v", "error", "-i", path, "-map", "0:v:0", "-pix_fmt", "rgba", "-f", "framehash", "-hash", "sha256", "-",
+  ], {});
+  assertSucceeded(result, `ffmpeg failed decoding ${path}`);
+  return result.stdout.split("\n").flatMap((line) => {
+    if (line.startsWith("#dimensions")) return [line.trim()];
+    if (line.startsWith("#") || line.trim() === "") return [];
+    return [line.split(",").slice(-2).map((field) => field.trim()).join(",")];
+  }).join("\n");
+}
+
+export async function pixelsIdentical(left: string, right: string, exec: Exec): Promise<boolean> {
+  return (await decodedFingerprint(left, exec)) === (await decodedFingerprint(right, exec));
+}
