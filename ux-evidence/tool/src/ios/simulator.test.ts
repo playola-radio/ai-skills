@@ -78,4 +78,18 @@ describe("withIOSSimulator", () => {
     expect(calls.findIndex((call) => call[0] === "stop-children")).toBeLessThan(calls.findIndex((call) => call[2] === "delete"));
     void running;
   });
+
+  it("deletes a device whose creation finished after an interrupt", async () => {
+    const controller = new AbortController();
+    const cleanup = createCleanupRegistry(controller.signal);
+    const { calls, dependencies } = harness();
+    const create = dependencies.teardownExec;
+    dependencies.exec = vi.fn<Exec>(async () => { throw new Error("interrupted"); });
+    dependencies.teardownExec = vi.fn<Exec>(async (command, args, options) => {
+      if (args[1] === "create") controller.abort();
+      return create(command, args, options);
+    });
+    await expect(withIOSSimulator(input(cleanup), dependencies, async () => undefined)).rejects.toThrow("interrupted");
+    expect(calls.at(-1)).toEqual(["xcrun", "simctl", "delete", CREATED]);
+  });
 });

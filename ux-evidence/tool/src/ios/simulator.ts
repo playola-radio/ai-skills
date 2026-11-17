@@ -48,7 +48,9 @@ export async function withIOSSimulator<T>(
   };
 
   const name = `playola-ux-${basename(context.runDirectory)}-${revision}`;
-  const udid = (await run(["create", name, settings.deviceType, settings.runtime])).trim();
+  if (context.cleanup.signal.aborted) throw new Error(`interrupted before creating the ${revision} simulator`);
+  // Created without the cancellable runner: an interrupt mid-create must not lose the new device's id.
+  const udid = (await simctl(settings, dependencies.teardownExec, ["create", name, settings.deviceType, settings.runtime])).trim();
   if (!UDID.test(udid)) throw new Error(`simctl create returned an unexpected device id: ${udid}`);
 
   let teardown: Promise<void> | undefined;

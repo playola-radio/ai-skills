@@ -19,7 +19,7 @@ function context(overrides: Partial<RecordContext> = {}): RecordContext {
 
 const ok: ExecResult = { exitCode: 0, stdout: "", stderr: "" };
 
-function harness(options: { missing?: string; failBuildIn?: string } = {}) {
+function harness(options: { failBuildIn?: string } = {}) {
   const events: string[] = [];
   const exec = vi.fn<Exec>(async (command, args, execOptions) => {
     if (command === "git") events.push(`worktree-add ${args[4]}`);
@@ -34,7 +34,7 @@ function harness(options: { missing?: string; failBuildIn?: string } = {}) {
     exec,
     teardownExec,
     stopChildren: vi.fn(async () => { events.push("stop-children"); }),
-    fileExists: vi.fn(async (path: string) => !(options.missing !== undefined && path.endsWith(options.missing))),
+    fileExists: vi.fn(async () => true),
     copyFile: vi.fn(async (_source: string, destination: string) => { events.push(`copy ${destination}`); }),
     writeTextFile: vi.fn(async (path: string) => { events.push(`write ${path}`); }),
     homeDirectory: "/home/u",
@@ -57,12 +57,6 @@ describe("buildIOSRevisions", () => {
     expect(events.filter((event) => event.startsWith("copy"))).toContain(
       "copy /home/u/.cache/playola-ux/ios/run-1/base/wt/PlayolaRadio/Config/Secrets-Staging.xcconfig",
     );
-  });
-
-  it("missingSecretStopsBeforeBuild: an absent Secrets-Staging.xcconfig runs nothing", async () => {
-    const { exec, dependencies } = harness({ missing: "Secrets-Staging.xcconfig" });
-    await expect(buildIOSRevisions(context(), dependencies)).rejects.toThrow("missing Secrets-Staging.xcconfig in /home/u/ios/PlayolaRadio/Config");
-    expect(exec).not.toHaveBeenCalled();
   });
 
   it("a failed base build stops the run, keeps its log and never builds head", async () => {

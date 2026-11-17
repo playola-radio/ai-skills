@@ -1,4 +1,4 @@
-import { join, posix } from "node:path";
+import { posix } from "node:path";
 import { parseAllDocuments, stringify } from "yaml";
 import type { IOSSettings } from "../core/config.ts";
 import type { Exec } from "../core/effects.ts";
@@ -102,8 +102,4 @@ export async function collectScreenshots(
   if (missing.length > 0) throw new Error(`Maestro did not produce screenshots: ${missing.join(", ")}`);
   if (extra.length > 0) throw new Error(`Maestro produced screenshots flow.yaml does not declare: ${extra.join(", ")}`);
   return new Map(expectedNames.map((name) => [name, found.get(name)!]));
-}
-
-export function caseFlowPaths(caseDirectory: string): { setupPath: string; flowPath: string } {
-  return { setupPath: join(caseDirectory, "setup.yaml"), flowPath: join(caseDirectory, "flow.yaml") };
 }

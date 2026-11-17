@@ -1,3 +1,4 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import { makeHttpGet, createOwnedProcesses } from "./effects.ts";
 
@@ -36,4 +37,17 @@ describe("createOwnedProcesses", () => {
     await expect(exec("xcodebuild", [])).rejects.toThrow("interrupted before running xcodebuild");
     expect(spawnChild).not.toHaveBeenCalled();
   });
+
+  it("kills a descendant that ignores SIGTERM after its parent has exited", async () => {
+    let child: ChildProcess | undefined;
+    const spawnChild = (command: string, args: readonly string[]) =>
+      (child = spawn(command, [...args], { stdio: ["ignore", "pipe", "pipe"], detached: true }));
+    const { exec, stopAll } = createOwnedProcesses(new AbortController().signal, { spawnChild, graceMs: 200 });
+    const running = exec("sh", ["-c", "(trap '' TERM; echo ready; sleep 30) & wait"]);
+    await new Promise((resolve) => child!.stdout!.once("data", resolve));
+    const started = Date.now();
+    await stopAll();
+    expect(Date.now() - started).toBeLessThan(5000);
+    await expect(running).resolves.toMatchObject({ stdout: "ready\n" });
+  }, 10_000);
 });

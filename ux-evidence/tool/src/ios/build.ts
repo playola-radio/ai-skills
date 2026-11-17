@@ -74,7 +74,6 @@ export async function buildIOSRevisions(
 ): Promise<ReadonlyMap<RevisionName, string>> {
   const settings = iosConfig(context).ios;
   const { repoRoot, runDirectory, cleanup } = context;
-  await assertSecretsPresent(settings, dependencies.fileExists);
 
   const built = new Map<RevisionName, string>();
   for (const revision of revisionsToBuild(context)) {

@@ -8,7 +8,6 @@ import type { IOSEnvironment } from "../core/results.ts";
 import type { buildIOSRevisions, BuildDependencies } from "./build.ts";
 import { assertSecretsPresent } from "./build.ts";
 import {
-  caseFlowPaths,
   declaredScreenshotNames,
   renderMaestroWrapper,
   type collectScreenshots,
@@ -85,7 +84,8 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
       const ownedContext: RecordContext = { ...context, cleanup: owned };
       const dispose = () => owned.run();
       try {
-        const { setupPath, flowPath } = caseFlowPaths(context.caseDirectory);
+        const setupPath = posix.join(context.caseDirectory, "setup.yaml");
+        const flowPath = posix.join(context.caseDirectory, "flow.yaml");
         const names = declaredScreenshotNames(await dependencies.readTextFile(flowPath), flowPath);
         if (names.length === 0) throw new Error(`${flowPath} must take at least one screenshot (takeScreenshot: <name>)`);
         const setup = (await dependencies.fileExists(setupPath)) ? setupPath : undefined;

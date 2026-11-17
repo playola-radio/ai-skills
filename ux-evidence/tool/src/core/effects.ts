@@ -35,17 +35,18 @@ const STOP_GRACE_MS = 5000;
 // signal (or stopAll) then stops each group and waits for it to exit before any cleanup touches its files.
 export function createOwnedProcesses(
   signal: AbortSignal,
-  options: { spawnChild?: SpawnChild; killGroup?: (pid: number, signal: NodeJS.Signals) => void; graceMs?: number } = {},
+  options: { spawnChild?: SpawnChild; graceMs?: number } = {},
 ): OwnedProcesses {
   const spawnChild = options.spawnChild ?? spawnInOwnGroup;
-  const killGroup = options.killGroup ?? ((pid, name) => { process.kill(-pid, name); });
   const graceMs = options.graceMs ?? STOP_GRACE_MS;
   const running = new Map<ChildProcess, Promise<void>>();
 
   function stop(child: ChildProcess, exited: Promise<void>): Promise<void> {
+    // The whole group is signalled even after its leader exits: a descendant still holding the output
+    // pipes keeps "close" from firing until it is gone too.
     const send = (name: NodeJS.Signals) => {
-      if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
-      try { killGroup(child.pid, name); } catch { /* already gone */ }
+      if (child.pid === undefined) return;
+      try { process.kill(-child.pid, name); } catch { /* group already gone */ }
     };
     send("SIGTERM");
     const escalate = setTimeout(() => send("SIGKILL"), graceMs);

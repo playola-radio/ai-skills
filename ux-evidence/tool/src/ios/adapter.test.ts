@@ -18,7 +18,7 @@ function context(overrides: Partial<RecordContext> = {}): RecordContext {
   };
 }
 
-function harness(options: { failBuild?: boolean; sessionStatus?: number } = {}) {
+function harness(options: { failBuild?: boolean; sessionStatus?: number; missing?: string } = {}) {
   const events: string[] = [];
   let lock: string | undefined;
   const lockFiles: LockFiles = {
@@ -43,7 +43,7 @@ function harness(options: { failBuild?: boolean; sessionStatus?: number } = {}) 
       environment: { deviceType: "d", runtime: "r", xcodeVersion: "27.1", apiHost: "https://h" },
       tools: { xcode: "Xcode 27.1" },
     }),
-    fileExists: async () => true,
+    fileExists: async (path) => !(options.missing !== undefined && path.endsWith(options.missing)),
     readTextFile: async () => FLOW,
     writeTextFile: vi.fn(async () => {}),
     copyFile: vi.fn(async () => {}),
@@ -114,6 +114,13 @@ describe("createIOSAdapter", () => {
     await adapter.preflight(recordContext);
     await expect(adapter.prepare(recordContext)).rejects.toThrow("base build failed");
     expect(events.slice(-2)).toEqual(["remove-worktrees", "unlock"]);
+    expect(locked()).toBeUndefined();
+  });
+
+  it("missingSecretStopsBeforeBuild: an absent Secrets-Staging.xcconfig fails preflight before any build", async () => {
+    const { adapter, deps, locked } = harness({ missing: "Secrets-Staging.xcconfig" });
+    await expect(adapter.preflight(context())).rejects.toThrow("missing Secrets-Staging.xcconfig in /home/u/ios/PlayolaRadio/Config");
+    expect(deps.buildIOSRevisions).not.toHaveBeenCalled();
     expect(locked()).toBeUndefined();
   });
 
