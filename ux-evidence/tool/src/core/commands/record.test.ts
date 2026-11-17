@@ -89,6 +89,22 @@ describe("recordEvidenceCase", () => {
     expect(ctx.events).toEqual(["preflight", "clear", "prepare", "base", "head", "dispose", "remove-run"]);
   });
 
+  it("runs record-level cleanup only after result and comment are written", async () => {
+    ctx.deps.adapter.preflight.mockImplementationOnce(async (recordContext: RecordContext) => {
+      recordContext.cleanup.add(async () => {
+        expect(ctx.writtenPaths).toEqual([
+          "/repo/.qa-artifacts/c/result.json",
+          "/repo/.qa-artifacts/c/comment.md",
+        ]);
+        ctx.events.push("run-cleanup");
+      });
+      ctx.events.push("preflight");
+      return { environment: { dump: DUMP } as EvidenceEnvironment, tools: { ffmpeg: "7" } };
+    });
+    await recordEvidenceCase(input, ctx.deps);
+    expect(ctx.events.at(-1)).toBe("run-cleanup");
+  });
+
   it("failedBaseStopsHead: a base rejection never invokes head, disposes and writes nothing", async () => {
     ctx.capture.mockRejectedValueOnce(new Error("base control not found"));
     await expect(recordEvidenceCase(input, ctx.deps)).rejects.toThrow("base control not found");

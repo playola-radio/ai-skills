@@ -32,7 +32,10 @@ export async function readToolCommit(exec: Exec, toolDirectory = TOOL_DIRECTORY)
 }
 
 export async function loadPlatformAdapter(platform: Platform): Promise<PlatformAdapter> {
-  if (platform !== "web") throw new Error(`${platform} is not supported by this version of the UX evidence tool`);
+  if (platform === "ios") {
+    const { wireIOSAdapter } = await import("./ios/wire.ts");
+    return wireIOSAdapter();
+  }
   const { wireWebAdapter } = await import("./web/wire.ts");
   return wireWebAdapter();
 }
@@ -42,6 +45,7 @@ export interface CliCommands {
   verify(): Promise<VerificationReport>;
   publish(pr: string): Promise<void>;
   create(input: NewCaseInput): Promise<void>;
+  iosLogin(device: string | undefined): Promise<{ path: string; expiresAt: Date | null }>;
 }
 
 const USAGE = [
@@ -50,6 +54,7 @@ const USAGE = [
   "  ux-evidence verify",
   "  ux-evidence publish --pr <number>",
   "  ux-evidence new --case <id> --classification <visual|functional> --before <required|not-applicable> [--start-path <path>] [--reason <text>]",
+  "  ux-evidence ios-login [--device <udid>]",
 ];
 
 const CLASSIFICATIONS: readonly string[] = ["visual", "functional"];
@@ -158,6 +163,14 @@ export async function main(
         });
         return 0;
       }
+      case "ios-login": {
+        if ([...flags.keys()].some((name) => name !== "device")) return usage();
+        const saved = await commands.iosLogin(flags.get("device"));
+        print(saved.path);
+        print(saved.expiresAt === null ? "expiry: not supplied" : `expiry: ${saved.expiresAt.toISOString()}`);
+        print("session validated");
+        return 0;
+      }
       default:
         return usage();
     }
@@ -191,6 +204,18 @@ export function wireCommands(repoRoot: string): CliCommands {
         renderCase: (caseInput) => adapter.renderCase(caseInput),
       });
       for (const path of created) console.log(path);
+    },
+    iosLogin: async (device) => {
+      const loadedConfig = await config();
+      if (loadedConfig.platform !== "ios") throw new Error("ios-login needs a repository whose qa/ux/config.yaml has platform: ios");
+      const { captureSession, realAuthorizedGet, realSessionFiles } = await import("./ios/session.ts");
+      return captureSession(loadedConfig.ios, device, {
+        exec: realExec,
+        files: realSessionFiles,
+        get: realAuthorizedGet,
+        now: () => new Date(),
+        homeDirectory: homedir(),
+      });
     },
     record: async (caseId, { allowIdentical }) => {
       const loadedConfig = await config();

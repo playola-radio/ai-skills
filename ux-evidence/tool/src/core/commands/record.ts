@@ -199,8 +199,10 @@ export async function recordEvidenceCase(
     await removeRun();
     await dependencies.writeTextFile(posix.join(artifactDirectory, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
     await dependencies.writeTextFile(posix.join(artifactDirectory, "comment.md"), renderEvidenceComment(result).markdown);
+    await dependencies.cleanup.run();
     return result;
   } finally {
+    await dependencies.cleanup.run();
     await removeRun();
   }
 }
