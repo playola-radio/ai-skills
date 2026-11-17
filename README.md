@@ -39,6 +39,7 @@ Removes only symlinks pointing into this repo; leaves your other skills alone.
 | `diagnose-flaky` | repo agent | Diagnose and fix flaky server tests |
 | `fix-review` | repo agent | Fetch and address Claude review comments on the current branch's PR |
 | `review-pr` | repo agent | Review the current branch against the PR review checklist |
+| [`ux-evidence`](ux-evidence/SKILL.md) | repo agent | Record before/after screenshots or video of a visible change in the web or iPhone app and attach them to the PR |
 
 The five design-pr skills share one flow: see [`design-pr-flow.md`](design-pr-flow.md).
 Their mechanical rules live in `design-pr-tools/design_pr.py` (`state` and `check`);
