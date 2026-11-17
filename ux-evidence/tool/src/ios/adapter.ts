@@ -139,6 +139,7 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
                   await dependencies.writeTextFile(scripts.end, renderMarkScript(server.endUrl));
                   await dependencies.writeTextFile(wrapperPath, renderMaestroWrapper(config.ios.bundleId, setup, flowPath, scripts));
                   await dependencies.runMaestro({ settings: config.ios, udid, wrapperPath, outputDirectory }, processes.exec);
+                  await dependencies.collectScreenshots(outputDirectory, [], dependencies.screenshotFiles);
                 } finally {
                   await server.close();
                 }

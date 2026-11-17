@@ -5,6 +5,7 @@ import type { RecordContext } from "../core/platform.ts";
 import { IOS_CONFIG } from "../core/test-fixtures.ts";
 import type { FlowMarks } from "./video.ts";
 import { createIOSAdapter, type IOSAdapterDependencies } from "./adapter.ts";
+import { collectScreenshots } from "./maestro.ts";
 import type { LockFiles } from "./preflight.ts";
 
 const manifest: EvidenceManifest = { version: 1, id: "c", classification: "visual", before: { policy: "required", reason: null } };
@@ -221,6 +222,19 @@ describe("createIOSAdapter", () => {
     const prepared = await adapter.prepare(recordContext);
     await expect(prepared.capture("head")).rejects.toThrow("the Maestro flow failed (exit 1)");
     expect(events).toContain("marks-closed");
+  });
+
+  it("fails a functional capture when a subflow produces an undeclared screenshot", async () => {
+    const { adapter, deps } = harness();
+    deps.readTextFile = async () => "appId: fm.app\n---\n- runFlow: child.yaml\n";
+    deps.screenshotFiles = {
+      listFilesRecursively: async () => ["/home/u/.cache/playola-ux/ios/run-1/head/maestro/test-output/run/child/takeScreenshot/subflow-shot.png"],
+    };
+    deps.collectScreenshots = collectScreenshots;
+    const recordContext = context({ manifest: { ...manifest, classification: "functional" } });
+    await adapter.preflight(recordContext);
+    const prepared = await adapter.prepare(recordContext);
+    await expect(prepared.capture("head")).rejects.toThrow("does not declare: subflow-shot");
   });
 
   it("refuses screenshots in a functional flow, which records only a video", async () => {
