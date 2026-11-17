@@ -14,10 +14,6 @@ export const SECRETS_FILES = [
 ] as const;
 const SECRETS_DIRECTORY = join("PlayolaRadio", "Config");
 
-export function sharedPackageCache(homeDirectory: string): string {
-  return join(homeDirectory, ".cache", "playola-ux", "ios", "spm");
-}
-
 export interface BuildDependencies {
   exec: Exec;
   teardownExec: Exec;
@@ -62,10 +58,6 @@ function iosConfig(context: RecordContext): IOSConfig {
   return context.config;
 }
 
-export function revisionsToBuild(context: RecordContext): readonly RevisionName[] {
-  return context.manifest.before.policy === "required" ? ["base", "head"] : ["head"];
-}
-
 // Builds every applicable revision before anything is captured, base first. A failed base build stops
 // the run; head is never built in its place. Worktrees are removed by the cleanup registered here.
 export async function buildIOSRevisions(
@@ -74,9 +66,11 @@ export async function buildIOSRevisions(
 ): Promise<ReadonlyMap<RevisionName, string>> {
   const settings = iosConfig(context).ios;
   const { repoRoot, runDirectory, cleanup } = context;
+  const revisions: readonly RevisionName[] = context.manifest.before.policy === "required" ? ["base", "head"] : ["head"];
+  const packageCachePath = join(dependencies.homeDirectory, ".cache", "playola-ux", "ios", "spm");
 
   const built = new Map<RevisionName, string>();
-  for (const revision of revisionsToBuild(context)) {
+  for (const revision of revisions) {
     if (cleanup.signal.aborted) throw new Error(`interrupted before building ${revision}`);
     const revisionDirectory = posix.join(runDirectory, revision);
     const worktreePath = posix.join(revisionDirectory, "wt");
@@ -98,7 +92,7 @@ export async function buildIOSRevisions(
     const derivedDataPath = posix.join(revisionDirectory, "DerivedData");
     const result = await dependencies.exec(
       "xcodebuild",
-      xcodebuildArguments(settings, derivedDataPath, sharedPackageCache(dependencies.homeDirectory)),
+      xcodebuildArguments(settings, derivedDataPath, packageCachePath),
       { cwd: worktreePath, env: developerEnvironment(settings) },
     );
     if (result.exitCode !== 0) {

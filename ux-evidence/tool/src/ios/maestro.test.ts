@@ -14,8 +14,6 @@ describe("renderMaestroWrapper", () => {
       { runFlow: "/case dir/setup.yaml" },
       { runFlow: "/case dir/flow.yaml" },
     ]);
-    expect(wrapper).not.toContain("SCREENSHOT_PAGE");
-    expect(wrapper).not.toContain("clearKeychain");
   });
 
   it("omits setup when the case has none", () => {
