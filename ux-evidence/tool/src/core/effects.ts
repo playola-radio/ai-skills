@@ -87,8 +87,14 @@ export function createOwnedProcesses(
     await exited;
   }
 
+  // A group's shutdown outlives its leader's exit, so it is kept until it settles; every stopAll, including
+  // one made after an interrupt began stopping, awaits the same in-flight shutdowns.
+  const stopping = new Map<ChildProcess, Promise<void>>();
   const stopAll = async () => {
-    await Promise.all([...running].map(([child, exited]) => stop(child, exited)));
+    for (const [child, exited] of running) {
+      if (!stopping.has(child)) stopping.set(child, stop(child, exited).finally(() => stopping.delete(child)));
+    }
+    await Promise.all([...stopping.values()]);
   };
   signal.addEventListener("abort", () => { void stopAll(); }, { once: true });
 

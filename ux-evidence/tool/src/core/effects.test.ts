@@ -63,6 +63,20 @@ describe("createOwnedProcesses", () => {
     await running;
   }, 10_000);
 
+  it("makes a stopAll after an interrupt wait for the group the interrupt is still stopping", async () => {
+    let child: ChildProcess | undefined;
+    const spawnChild = (command: string, args: readonly string[]) =>
+      (child = spawn(command, [...args], { stdio: ["ignore", "pipe", "pipe"], detached: true }));
+    const controller = new AbortController();
+    const { exec, stopAll } = createOwnedProcesses(controller.signal, { spawnChild, graceMs: 200 });
+    const running = exec("sh", ["-c", "(trap '' TERM; exec sleep 30 >/dev/null 2>&1) & echo ready; wait"]);
+    await new Promise((resolve) => child!.stdout!.once("data", resolve));
+    controller.abort();
+    await expect(running).rejects.toThrow("interrupted while running sh");
+    await stopAll();
+    expect(() => process.kill(-child!.pid!, 0)).toThrow();
+  }, 10_000);
+
   it("gives up with a warning naming the process when its group outlives the forced stop", async () => {
     let child: ChildProcess | undefined;
     const spawnChild = (command: string, args: readonly string[]) =>
