@@ -133,6 +133,11 @@ describe("path policy", () => {
     expect([isRelevantPath("client/.config/theme.json", config), isRelevantPath("client/src/a.ts", config)]).toEqual([true, true]);
   });
 
+  it("keeps dots inside a segment literal in brace alternatives", () => {
+    const config = { ...web(), relevant: ["client/foo{.bar,baz}/**"] };
+    expect([isRelevantPath("client/foo.bar/a.ts", config), isRelevantPath("client/foobaz/a.ts", config)]).toEqual([true, true]);
+  });
+
   it("treats paths outside both lists as irrelevant", () => {
     expect(isRelevantPath("docs/a.ts", web())).toBe(false);
   });
