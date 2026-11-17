@@ -1,4 +1,4 @@
-import type { Exec } from "./effects.ts";
+import type { Exec } from "../core/effects.ts";
 
 const SETUP_HINT = "run `make ux-evidence-setup`";
 

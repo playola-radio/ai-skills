@@ -1,4 +1,4 @@
-import { nodeVersionError } from "./node-version.ts";
+import { nodeVersionError } from "./core/node-version.ts";
 
 const versionError = nodeVersionError(process.versions.node);
 if (versionError !== undefined) {

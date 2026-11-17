@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCleanupRegistry, runWithSignalCleanup } from "./cleanup.ts";
-import type { ExecOptions, ExecResult } from "./effects.ts";
+import { createCleanupRegistry, runWithSignalCleanup } from "../core/cleanup.ts";
+import type { ExecOptions, ExecResult } from "../core/effects.ts";
 import { withRevisionStack, type StackDependencies } from "./stack.ts";
 
 const request = { repoRoot: "/repo", revision: "base" as const, commit: "basesha", dumpPath: "/cache/production.dump", runId: "run1" };

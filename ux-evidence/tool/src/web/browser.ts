@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext } from "playwright";
-import type { EvidenceClassification, RevisionName } from "./domain.ts";
+import type { EvidenceClassification, RevisionName } from "../core/domain.ts";
 import type { EvidenceFlow, Shot } from "./flow-api.ts";
 
 export interface BrowserCapture {

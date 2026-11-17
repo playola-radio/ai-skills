@@ -1,8 +1,8 @@
 import { join, posix } from "node:path";
-import type { captureRevision, BrowserCapture } from "../browser.ts";
+import type { captureRevision, BrowserCapture } from "../../web/browser.ts";
 import type { EvidenceManifest, ReadTextFile, RevisionName } from "../domain.ts";
 import type { Exec, PathStat } from "../effects.ts";
-import { selectFlowPath, type loadEvidenceFlow } from "../flows.ts";
+import { selectFlowPath, type loadEvidenceFlow } from "../../web/flows.ts";
 import { listBlockingDirtyPaths, resolveDumpMetadata, resolveGitRevisions } from "../git.ts";
 import { assertValidCaseId } from "../case-id.ts";
 import { loadManifest } from "../manifest.ts";
@@ -14,7 +14,7 @@ import {
   type EvidenceResult,
   type RevisionResult,
 } from "../results.ts";
-import type { withRevisionStack, StackDependencies } from "../stack.ts";
+import type { withRevisionStack, StackDependencies } from "../../web/stack.ts";
 
 export interface RecordDependencies {
   exec: Exec;

@@ -28,7 +28,7 @@ describe("renderNewCase", () => {
   });
 
   it("newFlowUsesPortableTypeImport: the flow imports its types through the qa/ux/.tool link", () => {
-    expect(renderNewCase(input).flowSource.split("\n")[0]).toBe('import type { DemoContext } from "../.tool/src/flow-api.ts";');
+    expect(renderNewCase(input).flowSource.split("\n")[0]).toBe('import type { DemoContext } from "../../.tool/src/flow-api.ts";');
   });
 
   it("includes a shot line for visual cases only", () => {

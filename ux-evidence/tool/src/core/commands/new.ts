@@ -33,7 +33,7 @@ export function renderNewCase(input: NewCaseInput): { manifestYaml: string; flow
 
   const shotLine = input.classification === "visual" ? '  await shot("main");\n' : "";
   const flowSource = [
-    'import type { DemoContext } from "../.tool/src/flow-api.ts";',
+    'import type { DemoContext } from "../../.tool/src/flow-api.ts";',
     "",
     `export async function demo(${input.classification === "visual" ? "{ page, shot }" : "{ page }"}: DemoContext): Promise<void> {`,
     ...(shotLine === "" ? [] : [shotLine.trimEnd()]),

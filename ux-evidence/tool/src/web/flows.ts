@@ -1,7 +1,7 @@
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { EvidenceFlow } from "./flow-api.ts";
-import type { RevisionName } from "./domain.ts";
+import type { RevisionName } from "../core/domain.ts";
 
 export function selectFlowPath(input: { caseDirectory: string; revision: RevisionName; baseOverrideExists: boolean }): string {
   const useOverride = input.revision === "base" && input.baseOverrideExists;

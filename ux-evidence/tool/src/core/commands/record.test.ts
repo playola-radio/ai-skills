@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BrowserCapture } from "../browser.ts";
+import type { BrowserCapture } from "../../web/browser.ts";
 import { createCleanupRegistry } from "../cleanup.ts";
 import type { EvidenceManifest, RevisionName } from "../domain.ts";
 import type { ExecResult } from "../effects.ts";
-import type { EvidenceFlow } from "../flow-api.ts";
-import type { RevisionStack } from "../stack.ts";
+import type { EvidenceFlow } from "../../web/flow-api.ts";
+import type { RevisionStack } from "../../web/stack.ts";
 import { recordEvidenceCase, type RecordDependencies } from "./record.ts";
 
 const input = { repoRoot: "/repo", caseId: "c", environment: { CENTRAL_DB_CACHE: "/cache" } as NodeJS.ProcessEnv, homeDirectory: "/home/u" };

@@ -3,20 +3,20 @@ import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:f
 import { homedir } from "node:os";
 import { chromium } from "playwright";
 import { dirname, join, resolve } from "node:path";
-import { clearArtifactDirectory } from "./artifacts.ts";
-import { assertValidCaseId } from "./case-id.ts";
-import type { BeforePolicy, EvidenceClassification } from "./domain.ts";
-import { captureRevision } from "./browser.ts";
-import { runWithSignalCleanup } from "./cleanup.ts";
-import { createEvidenceCase, type NewCaseInput } from "./commands/new.ts";
-import { MISSING_EVIDENCE_MESSAGE, publishEvidence } from "./commands/publish.ts";
-import { recordEvidenceCase, type RecordDependencies } from "./commands/record.ts";
-import { verifyEvidence, type VerificationReport, type VerifyDependencies } from "./commands/verify.ts";
-import { realExec, realHttpGet, realIsPortAvailable, realStat } from "./effects.ts";
-import { loadEvidenceFlow } from "./flows.ts";
-import { composeComparisonPng, encodeVideo } from "./media.ts";
-import { withRevisionStack } from "./stack.ts";
-import { collectToolVersions } from "./tools.ts";
+import { clearArtifactDirectory } from "./core/artifacts.ts";
+import { assertValidCaseId } from "./core/case-id.ts";
+import type { BeforePolicy, EvidenceClassification } from "./core/domain.ts";
+import { captureRevision } from "./web/browser.ts";
+import { runWithSignalCleanup } from "./core/cleanup.ts";
+import { createEvidenceCase, type NewCaseInput } from "./core/commands/new.ts";
+import { MISSING_EVIDENCE_MESSAGE, publishEvidence } from "./core/commands/publish.ts";
+import { recordEvidenceCase, type RecordDependencies } from "./core/commands/record.ts";
+import { verifyEvidence, type VerificationReport, type VerifyDependencies } from "./core/commands/verify.ts";
+import { realExec, realHttpGet, realIsPortAvailable, realStat } from "./core/effects.ts";
+import { loadEvidenceFlow } from "./web/flows.ts";
+import { composeComparisonPng, encodeVideo } from "./core/media.ts";
+import { withRevisionStack } from "./web/stack.ts";
+import { collectToolVersions } from "./web/tools.ts";
 
 export async function makeEvidenceTemporaryDirectory(prefix: string, home = homedir()): Promise<string> {
   const root = join(home, ".cache", "playola-ux");

@@ -3,7 +3,7 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { main, makeEvidenceTemporaryDirectory, parseInvocation, run, type CliCommands } from "./cli.ts";
-import type { VerificationReport } from "./commands/verify.ts";
+import type { VerificationReport } from "./core/commands/verify.ts";
 
 const currentReport: VerificationReport = {
   current: true, missingEvidenceForClientChanges: false, cases: [{ caseId: "c", current: true, reason: "recorded at current HEAD" }],

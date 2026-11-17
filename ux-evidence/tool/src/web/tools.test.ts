@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Exec } from "./effects.ts";
+import type { Exec } from "../core/effects.ts";
 import { collectToolVersions } from "./tools.ts";
-import { nodeVersionError } from "./node-version.ts";
+import { nodeVersionError } from "../core/node-version.ts";
 
 function build(options: { ffmpeg?: "ok" | "missing" | "fails"; docker?: "ok" | "missing"; chromiumInstalled?: boolean } = {}) {
   const exec: Exec = async (command) => {

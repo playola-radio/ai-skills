@@ -1,7 +1,7 @@
 import { posix } from "node:path";
-import type { CleanupRegistry } from "./cleanup.ts";
-import type { Exec, ExecOptions, ExecResult, HttpGet } from "./effects.ts";
-import type { RevisionName } from "./domain.ts";
+import type { CleanupRegistry } from "../core/cleanup.ts";
+import type { Exec, ExecOptions, ExecResult, HttpGet } from "../core/effects.ts";
+import type { RevisionName } from "../core/domain.ts";
 import { CANDIDATE_OFFSETS, findFreePortOffset, type IsPortAvailable } from "./ports.ts";
 
 export interface RevisionStack {
