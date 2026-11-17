@@ -9,6 +9,7 @@ import { collectScreenshots, runMaestro } from "./maestro.ts";
 import { checkIOSTools, type LockFiles } from "./preflight.ts";
 import { realAuthorizedGet, realSessionFiles } from "./session.ts";
 import { withIOSSimulator } from "./simulator.ts";
+import { recordIOSVideo, serveFlowMarks } from "./video.ts";
 
 async function exists(path: string): Promise<boolean> {
   try { await access(path); return true; } catch { return false; }
@@ -89,5 +90,8 @@ export function wireIOSAdapter(): PlatformAdapter {
     withIOSSimulator,
     runMaestro,
     collectScreenshots,
+    recordIOSVideo,
+    serveFlowMarks,
+    now: () => Date.now(),
   });
 }

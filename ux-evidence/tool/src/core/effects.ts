@@ -19,8 +19,15 @@ export const realExec: Exec = (command, args, options) =>
     child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout, stderr }));
   });
 
+export interface StartedProcess {
+  finished: Promise<ExecResult>;
+  interrupt(): void;
+}
+
 export interface OwnedProcesses {
   exec: Exec;
+  // For a child that runs until told to stop: output arrives as it is written, and interrupt sends SIGINT.
+  start(command: string, args: readonly string[], options?: ExecOptions & { onOutput?(text: string): void }): StartedProcess;
   stopAll(): Promise<void>;
 }
 
@@ -98,14 +105,15 @@ export function createOwnedProcesses(
   };
   signal.addEventListener("abort", () => { void stopAll(); }, { once: true });
 
-  const exec: Exec = (command, args, execOptions = {}) => {
-    if (signal.aborted) return Promise.reject(new Error(`interrupted before running ${command}`));
-    return new Promise((resolve, reject) => {
-      const child = spawnChild(command, args, execOptions);
-      let stdout = "";
-      let stderr = "";
-      child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-      child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+  const start: OwnedProcesses["start"] = (command, args, startOptions = {}) => {
+    if (signal.aborted) throw new Error(`interrupted before running ${command}`);
+    const { onOutput, ...execOptions } = startOptions;
+    const child = spawnChild(command, args, execOptions);
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); onOutput?.(chunk.toString()); });
+    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); onOutput?.(chunk.toString()); });
+    const finished = new Promise<ExecResult>((resolve, reject) => {
       running.set(child, new Promise<void>((exited) => {
         child.on("error", (error) => { running.delete(child); exited(); reject(error); });
         child.on("close", (code) => {
@@ -116,9 +124,16 @@ export function createOwnedProcesses(
         });
       }));
     });
+    const interrupt = () => {
+      if (child.pid === undefined) return;
+      try { process.kill(-child.pid, "SIGINT"); } catch { /* group already gone */ }
+    };
+    return { finished, interrupt };
   };
 
-  return { exec, stopAll };
+  const exec: Exec = async (command, args, execOptions = {}) => start(command, args, execOptions).finished;
+
+  return { exec, start, stopAll };
 }
 
 const REQUEST_TIMEOUT_MS = 5000;
