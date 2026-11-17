@@ -1,6 +1,7 @@
 ---
 name: ux-evidence
-description: Use when a branch adds or changes something a user can see or do in the Playola web client (client/) or iPhone app (PlayolaRadio/) — record before/after screenshots or video with `make ux-evidence`, check it is current, and attach it to the PR, or waive it with "UX evidence: none — <reason>".
+description: >-
+  Use when a branch adds or changes something a user can see or do in the Playola web client (client/) or iPhone app (PlayolaRadio/) — record before/after screenshots or video with `make ux-evidence`, check it is current, and attach it to the PR, or waive it with "UX evidence: none — <reason>".
 ---
 
 # UX evidence
@@ -28,7 +29,7 @@ On web, `server/` changes do not need evidence, but they do make existing eviden
 ## Visual or functional
 
 - `visual`: same screen, same states, same actions and outcomes; only layout, styling, icons or copy changed. Produces before/after/compare PNGs; the flow must take at least one screenshot.
-- `functional`: anything else. Produces `before.mp4` and `after.mp4`; screenshots are optional extras.
+- `functional`: anything else. Produces `before.mp4` and `after.mp4`; screenshots are optional extras on web. iPhone functional flows must not contain `takeScreenshot` steps.
 
 When unsure, `functional`.
 
@@ -78,7 +79,7 @@ It saves the session to `~/.config/playola-ux/ios-staging-auth.json` and prints 
    | `setup.yaml` | iPhone, optional | Maestro flow, not recorded: reach the starting screen and dismiss first-launch prompts |
    | `flow.yaml` | iPhone | Maestro flow, recorded; the same file runs on both builds (there is no "before" variant) |
 
-   The generated flow fails on purpose until you write it. Screenshots are `shot("<name>")` on web and `takeScreenshot: <name>` on iPhone; before and after must take the same names. Wait on visible content, never fixed sleeps, and never match data that can change (station names).
+   The generated flow fails on purpose until you write it. Screenshots are `shot("<name>")` on web and `takeScreenshot: <name>` in iPhone visual flows; before and after must take the same names. iPhone functional flows must not contain `takeScreenshot` steps. Wait on visible content, never fixed sleeps, and never match data that can change (station names).
 
 2. **Commit the change and the case**, then record. A run refuses uncommitted changes to the app code or the case folder. "Before" is the merge base with the local `origin/develop` (the tool does not fetch); "after" is `HEAD`.
 
