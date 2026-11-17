@@ -46,11 +46,13 @@ async function moveFile(source: string, destination: string): Promise<void> {
 }
 
 export function wireIOSAdapter(): PlatformAdapter {
+  const teardownProcesses = createOwnedProcesses(new AbortController().signal);
   return createIOSAdapter({
     homeDirectory: homedir(),
     pid: process.pid,
     ownProcesses: (signal) => createOwnedProcesses(signal),
-    teardownExec: realExec,
+    teardownExec: teardownProcesses.exec,
+    stopTeardownChildren: teardownProcesses.stopAll,
     lockFiles,
     isProcessAlive,
     session: { files: realSessionFiles, get: realAuthorizedGet, now: () => new Date() },

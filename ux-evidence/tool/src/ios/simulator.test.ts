@@ -28,6 +28,7 @@ function harness() {
   const dependencies: SimulatorDependencies = {
     exec,
     teardownExec: exec,
+    stopTeardownChildren: vi.fn(async () => {}),
     stopChildren: vi.fn(async () => { calls.push(["stop-children"]); }),
     writeSession: vi.fn(async (container: string) => { calls.push(["write-session", container]); }),
   };
@@ -61,6 +62,42 @@ describe("withIOSSimulator", () => {
     const { calls, dependencies } = harness();
     await expect(withIOSSimulator(input(), dependencies, async () => { throw new Error("flow failed"); })).rejects.toThrow("flow failed");
     expect(calls.at(-1)).toEqual(["xcrun", "simctl", "delete", CREATED]);
+  });
+
+  it("bounds stalled teardown commands, warns with the device id and continues", async () => {
+    vi.useFakeTimers();
+    try {
+      const { calls, dependencies } = harness();
+      const warnings: string[] = [];
+      dependencies.teardownTimeoutMs = 20;
+      dependencies.warn = (message) => { warnings.push(message); };
+      dependencies.teardownExec = vi.fn<Exec>(async (command, args, options) => {
+        if (args[1] === "create") return { exitCode: 0, stdout: `${CREATED}\n`, stderr: "" };
+        if (args[1] === "terminate") return new Promise(() => undefined);
+        return dependencies.exec(command, args, options);
+      });
+      const recording = withIOSSimulator(input(), dependencies, async () => undefined);
+      await vi.advanceTimersByTimeAsync(20);
+      await recording;
+      expect(warnings).toContain(`warning: simctl terminate timed out for device ${CREATED}; continuing cleanup`);
+      expect(calls.at(-1)).toEqual(["xcrun", "simctl", "delete", CREATED]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the capture error when simulator deletion also fails", async () => {
+    const { dependencies } = harness();
+    const teardown = dependencies.teardownExec;
+    dependencies.teardownExec = vi.fn<Exec>(async (command, args, options) => {
+      if (args[1] === "delete") throw new Error("delete failed");
+      return teardown(command, args, options);
+    });
+    await expect(withIOSSimulator(input(), dependencies, async () => { throw new Error("capture failed"); }))
+      .rejects.toSatisfy((error: unknown) => error instanceof AggregateError
+        && error.message === `capture failed; simulator ${CREATED} cleanup also failed: delete failed`
+        && error.errors.some((item) => item instanceof Error && item.message === "capture failed")
+        && error.errors.some((item) => item instanceof Error && item.message === "delete failed"));
   });
 
   it("registers the deletion as soon as the device exists, and runs it once", async () => {

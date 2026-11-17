@@ -32,6 +32,7 @@ function harness(options: { failBuild?: boolean; sessionStatus?: number; missing
     pid: 42,
     ownProcesses: () => ({ exec: vi.fn(), stopAll: vi.fn(async () => {}) }),
     teardownExec: vi.fn(),
+    stopTeardownChildren: vi.fn(async () => {}),
     lockFiles,
     isProcessAlive: () => true,
     session: {
@@ -97,22 +98,50 @@ describe("createIOSAdapter", () => {
     );
   });
 
-  it("dispose removes what the run created, then releases the lock", async () => {
+  it("keeps the lock after dispose until run-level cleanup finishes", async () => {
     const { adapter, events, locked } = harness();
-    const recordContext = context();
+    const cleanup = createCleanupRegistry();
+    const recordContext = context({ cleanup });
     await adapter.preflight(recordContext);
     expect(locked()).toBe("record-42.lock");
     const prepared = await adapter.prepare(recordContext);
     await prepared.dispose();
-    expect(events.slice(-2)).toEqual(["remove-worktrees", "unlock"]);
+    expect(events.at(-1)).toBe("remove-worktrees");
+    expect(locked()).toBe("record-42.lock");
+    await cleanup.run();
+    expect(events.at(-1)).toBe("unlock");
     expect(locked()).toBeUndefined();
   });
 
-  it("a failed build cleans up and releases the lock even though core never gets a run to dispose", async () => {
+  it("waits for interrupted preflight children before releasing the lock", async () => {
+    const { adapter, deps, events, locked } = harness();
+    const cleanup = createCleanupRegistry();
+    let finishStop: () => void = () => undefined;
+    const stopping = new Promise<void>((resolve) => { finishStop = resolve; });
+    deps.ownProcesses = () => ({
+      exec: vi.fn(),
+      stopAll: vi.fn(async () => { events.push("stop-children"); await stopping; events.push("children-stopped"); }),
+    });
+    deps.checkTools = async () => new Promise(() => undefined);
+
+    void adapter.preflight(context({ cleanup }));
+    await vi.waitFor(() => expect(locked()).toBe("record-42.lock"));
+    const cleaning = cleanup.run();
+    await vi.waitFor(() => expect(events).toContain("stop-children"));
+    expect(events).not.toContain("unlock");
+    finishStop();
+    await cleaning;
+    expect(events.slice(-2)).toEqual(["children-stopped", "unlock"]);
+  });
+
+  it("a failed build cleans up and run-level cleanup releases the lock", async () => {
     const { adapter, events, locked } = harness({ failBuild: true });
-    const recordContext = context();
+    const cleanup = createCleanupRegistry();
+    const recordContext = context({ cleanup });
     await adapter.preflight(recordContext);
     await expect(adapter.prepare(recordContext)).rejects.toThrow("base build failed");
+    expect(locked()).toBe("record-42.lock");
+    await cleanup.run();
     expect(events.slice(-2)).toEqual(["remove-worktrees", "unlock"]);
     expect(locked()).toBeUndefined();
   });

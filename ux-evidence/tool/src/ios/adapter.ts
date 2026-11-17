@@ -23,6 +23,7 @@ export interface IOSAdapterDependencies {
   pid: number;
   ownProcesses(signal: AbortSignal): OwnedProcesses;
   teardownExec: Exec;
+  stopTeardownChildren(): Promise<void>;
   lockFiles: LockFiles;
   isProcessAlive(pid: number): boolean;
   session: Omit<SessionDependencies, "exec" | "homeDirectory">;
@@ -60,14 +61,17 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
       const owned = createCleanupRegistry(context.cleanup.signal);
       let teardown: Promise<void> | undefined;
       const dispose = () => (teardown ??= owned.run());
-      context.cleanup.add(dispose);
       const release = await acquireRunLock(runLockDirectory(dependencies.homeDirectory), dependencies.pid, {
         files: dependencies.lockFiles,
         isProcessAlive: dependencies.isProcessAlive,
       });
-      owned.add(release);
+      let unlocking: Promise<void> | undefined;
+      const unlock = () => (unlocking ??= release());
+      context.cleanup.add(unlock);
+      context.cleanup.add(dispose);
       try {
         const processes = dependencies.ownProcesses(context.cleanup.signal);
+        owned.add(processes.stopAll);
         const checked = await dependencies.checkTools(config, processes.exec);
         await assertSecretsPresent(config.ios, dependencies.fileExists);
         const session = await loadSavedSession(config.ios, { ...dependencies.session, homeDirectory: dependencies.homeDirectory });
@@ -75,6 +79,7 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
         return checked;
       } catch (error) {
         await dispose();
+        await unlock();
         throw error;
       }
     },
@@ -104,6 +109,7 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
         const simulatorDependencies: SimulatorDependencies = {
           exec: processes.exec,
           teardownExec: dependencies.teardownExec,
+          stopTeardownChildren: dependencies.stopTeardownChildren,
           stopChildren: processes.stopAll,
           writeSession: dependencies.writeSession,
         };
