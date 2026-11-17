@@ -25,6 +25,7 @@ beforeEach(() => {
     verify: vi.fn(async () => currentReport),
     publish: vi.fn(async () => {}),
     create: vi.fn(async () => {}),
+    iosLogin: vi.fn(async () => ({ path: "/home/.config/playola-ux/ios-staging-auth.json", expiresAt: null })),
   } as typeof commands;
 });
 
@@ -178,8 +179,30 @@ describe("readToolCommit", () => {
 });
 
 describe("loadPlatformAdapter", () => {
-  it("refuses iOS until its adapter ships", async () => {
-    await expect(loadPlatformAdapter("ios")).rejects.toThrow("ios is not supported by this version of the UX evidence tool");
+  it("loads the iOS adapter, which refuses to create cases until video support ships", async () => {
+    const adapter = await loadPlatformAdapter("ios");
+    expect(() => adapter.renderCase({ id: "c", classification: "visual", beforePolicy: "required", reason: null }))
+      .toThrow("not yet supported");
+  });
+});
+
+describe("ios-login", () => {
+  it("passes --device and prints only the path, a missing expiry and the confirmation", async () => {
+    expect(await main(["ios-login", "--device", "ABC"], commands, print)).toBe(0);
+    expect(commands.iosLogin).toHaveBeenCalledWith("ABC");
+    expect(printed).toEqual(["/home/.config/playola-ux/ios-staging-auth.json", "expiry: not supplied", "session validated"]);
+  });
+
+  it("prints the expiry when the token has one and works without --device", async () => {
+    commands.iosLogin = vi.fn(async () => ({ path: "/p", expiresAt: new Date("2030-01-01T00:30:00Z") }));
+    expect(await main(["ios-login"], commands, print)).toBe(0);
+    expect(commands.iosLogin).toHaveBeenCalledWith(undefined);
+    expect(printed).toEqual(["/p", "expiry: 2030-01-01T00:30:00.000Z", "session validated"]);
+  });
+
+  it("rejects other flags", async () => {
+    expect(await main(["ios-login", "--udid", "ABC"], commands, print)).toBe(2);
+    expect(commands.iosLogin).not.toHaveBeenCalled();
   });
 });
 
