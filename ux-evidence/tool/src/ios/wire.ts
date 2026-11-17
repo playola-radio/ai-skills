@@ -92,6 +92,6 @@ export function wireIOSAdapter(): PlatformAdapter {
     collectScreenshots,
     recordIOSVideo,
     serveFlowMarks,
-    now: () => Date.now(),
+    now: () => performance.now(),
   });
 }
