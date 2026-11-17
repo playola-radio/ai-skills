@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ExecResult, OwnedProcesses, StartedProcess } from "../core/effects.ts";
+import type { Exec, ExecResult, OwnedProcesses, StartedProcess } from "../core/effects.ts";
 import type { VideoTrim } from "../core/media.ts";
 
 // Called by the generated Maestro scripts around flow.yaml: begin after setup, end after the last step.
@@ -12,6 +12,7 @@ export interface FlowMarks {
 
 export interface VideoRecorderDependencies {
   start: OwnedProcesses["start"];
+  frameSeconds(path: string): Promise<number[]>;
   now(): number;
   readyTimeoutMs?: number;
   finalizeTimeoutMs?: number;
@@ -21,6 +22,8 @@ export interface VideoRecorderDependencies {
 const RECORDING_STARTED = "Recording started";
 const READY_TIMEOUT_MS = 8000;
 const FINALIZE_TIMEOUT_MS = 30_000;
+const LEAD_SECONDS = 0.5;
+const TAIL_SECONDS = 1;
 
 function tail(text: string, lineCount: number): string {
   return text.trimEnd().split("\n").slice(-lineCount).join("\n");
@@ -42,6 +45,32 @@ async function within<T>(promise: Promise<T>, timeoutMs: number, message: string
 // end only after the last step has settled, so no hold is added.
 export function measuredWindow(times: { readyAt: number; beginAt: number; endAt: number }): VideoTrim {
   return { startSeconds: (times.beginAt - times.readyAt) / 1000, durationSeconds: (times.endAt - times.beginAt) / 1000 };
+}
+
+// The simulator writes a frame only when the screen changes, so the raw frame times show when the flow's first
+// and last actions appeared. Maestro can be slow to reach begin and end on a busy machine; the published part
+// is narrowed to just around those changes, never past the marks.
+export function fitToScreenChanges(window: VideoTrim, frameSeconds: readonly number[]): VideoTrim {
+  const end = window.startSeconds + window.durationSeconds;
+  const changes = frameSeconds.filter((seconds) => seconds > window.startSeconds && seconds <= end);
+  if (changes.length === 0) return window;
+  const startSeconds = Math.max(window.startSeconds, Math.min(...changes) - LEAD_SECONDS);
+  const until = Math.min(end, Math.max(...changes) + TAIL_SECONDS);
+  return { startSeconds, durationSeconds: until - startSeconds };
+}
+
+// Reads packet times only (stream copy), so even a long recording is listed in moments.
+export async function readFrameSeconds(path: string, exec: Exec): Promise<number[]> {
+  const result = await exec("ffmpeg", ["-v", "error", "-i", path, "-map", "0:v:0", "-c", "copy", "-f", "framemd5", "-"], {});
+  if (result.exitCode !== 0) {
+    throw new Error(`ffmpeg could not read ${path} (exit ${result.exitCode}): ${tail(result.stderr, 5)}`);
+  }
+  const timeBase = /^#tb 0: (\d+)\/(\d+)$/m.exec(result.stdout);
+  if (timeBase === null) throw new Error(`ffmpeg listed no time base for ${path}`);
+  const unit = Number(timeBase[1]) / Number(timeBase[2]);
+  return result.stdout.split("\n")
+    .filter((line) => line.trim() !== "" && !line.startsWith("#"))
+    .map((line) => Number(line.split(",")[2]) * unit);
 }
 
 export async function recordIOSVideo(
@@ -114,7 +143,8 @@ export async function recordIOSVideo(
   }
   if (readyAt === undefined || beginAt === undefined) throw new Error("flow.yaml finished without starting the video");
   if (endAt === undefined) throw new Error("flow.yaml finished without reaching the end of the recorded part");
-  return { path: rawPath, trim: measuredWindow({ readyAt, beginAt, endAt }) };
+  const window = measuredWindow({ readyAt, beginAt, endAt });
+  return { path: rawPath, trim: fitToScreenChanges(window, await dependencies.frameSeconds(rawPath)) };
 }
 
 export interface MarkServer {

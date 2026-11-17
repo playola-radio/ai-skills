@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExecResult, OwnedProcesses } from "../core/effects.ts";
-import { measuredWindow, recordIOSVideo, renderMarkScript, serveFlowMarks, type FlowMarks } from "./video.ts";
+import {
+  fitToScreenChanges, measuredWindow, readFrameSeconds, recordIOSVideo, renderMarkScript, serveFlowMarks, type FlowMarks,
+} from "./video.ts";
 
 const FINISHED: ExecResult = { exitCode: 0, stdout: "", stderr: "Recording completed. Writing to disk.\n" };
 
@@ -22,6 +24,7 @@ function fakeRecorder() {
 }
 
 let clock = 0;
+const noFrames = async () => [];
 const now = () => clock;
 const input = { udid: "UDID-1", rawPath: "/run/head/recording.mov", environment: { DEVELOPER_DIR: "/x" } };
 
@@ -34,7 +37,7 @@ describe("recordIOSVideo", () => {
       recorder.announce();
       await begun;
       marks.end();
-    }, { start: recorder.start, now });
+    }, { start: recorder.start, frameSeconds: noFrames, now });
     await vi.waitFor(() => expect(recorder.events).toContain("interrupt"));
     recorder.finish();
     await recording;
@@ -58,7 +61,7 @@ describe("recordIOSVideo", () => {
       recorder.announce("rted\n");
       await begun;
       marks.end();
-    }, { start: recorder.start, now });
+    }, { start: recorder.start, frameSeconds: noFrames, now });
     await vi.waitFor(() => expect(recorder.events).toContain("interrupt"));
     recorder.finish();
     await recording;
@@ -67,7 +70,7 @@ describe("recordIOSVideo", () => {
 
   it("fails begin when the recorder does not start in time", async () => {
     const recorder = fakeRecorder();
-    const recording = recordIOSVideo(input, async (marks) => { await marks.begin(); }, { start: recorder.start, now, readyTimeoutMs: 20 });
+    const recording = recordIOSVideo(input, async (marks) => { await marks.begin(); }, { start: recorder.start, frameSeconds: noFrames, now, readyTimeoutMs: 20 });
     await vi.waitFor(() => expect(recorder.events).toContain("interrupt"));
     recorder.finish();
     await expect(recording).rejects.toThrow("the simulator video recorder did not start within 0.02 s");
@@ -83,7 +86,7 @@ describe("recordIOSVideo", () => {
       clock = 3250;
       marks.end();
       clock = 5000;
-    }, { start: recorder.start, now });
+    }, { start: recorder.start, frameSeconds: noFrames, now });
     let settled = false;
     void recording.then(() => { settled = true; });
     await vi.waitFor(() => expect(recorder.events).toContain("interrupt"));
@@ -96,6 +99,25 @@ describe("recordIOSVideo", () => {
     expect(recorder.events.slice(-2)).toEqual(["interrupt", "recorder-exit"]);
   });
 
+  it("fits the measured window to the screen changes the raw recording holds", async () => {
+    const recorder = fakeRecorder();
+    clock = 1000;
+    const frameSeconds = vi.fn(async () => [0, 1.5, 2, 2.5, 9]);
+    const recording = recordIOSVideo(input, async (marks) => {
+      const begun = marks.begin();
+      recorder.announce();
+      await begun;
+      clock = 6000;
+      marks.end();
+    }, { start: recorder.start, frameSeconds, now });
+    await vi.waitFor(() => expect(recorder.events).toContain("interrupt"));
+    recorder.finish();
+    await expect(recording).resolves.toEqual({
+      path: "/run/head/recording.mov", trim: { startSeconds: 1, durationSeconds: 2.5 },
+    });
+    expect(frameSeconds).toHaveBeenCalledWith("/run/head/recording.mov");
+  });
+
   it("failedFlowPublishesNothing: a failing flow still stops and awaits the recorder, then fails", async () => {
     const recorder = fakeRecorder();
     const recording = recordIOSVideo(input, async (marks) => {
@@ -103,7 +125,7 @@ describe("recordIOSVideo", () => {
       recorder.announce();
       await begun;
       throw new Error("the Maestro flow failed (exit 1)");
-    }, { start: recorder.start, now });
+    }, { start: recorder.start, frameSeconds: noFrames, now });
     await vi.waitFor(() => expect(recorder.events).toContain("interrupt"));
     recorder.finish();
     await expect(recording).rejects.toThrow("the Maestro flow failed (exit 1)");
@@ -116,7 +138,7 @@ describe("recordIOSVideo", () => {
       const begun = marks.begin();
       recorder.announce();
       await begun;
-    }, { start: recorder.start, now });
+    }, { start: recorder.start, frameSeconds: noFrames, now });
     await vi.waitFor(() => expect(recorder.events).toContain("interrupt"));
     recorder.finish();
     await expect(recording).rejects.toThrow("flow.yaml finished without reaching the end of the recorded part");
@@ -124,7 +146,7 @@ describe("recordIOSVideo", () => {
 
   it("fails when the flow never begins recording", async () => {
     const recorder = fakeRecorder();
-    await expect(recordIOSVideo(input, async () => {}, { start: recorder.start, now }))
+    await expect(recordIOSVideo(input, async () => {}, { start: recorder.start, frameSeconds: noFrames, now }))
       .rejects.toThrow("flow.yaml finished without starting the video");
     expect(recorder.start).not.toHaveBeenCalled();
   });
@@ -136,7 +158,7 @@ describe("recordIOSVideo", () => {
       recorder.announce();
       await begun;
       marks.end();
-    }, { start: recorder.start, now });
+    }, { start: recorder.start, frameSeconds: noFrames, now });
     await vi.waitFor(() => expect(recorder.events).toContain("interrupt"));
     recorder.finish({ exitCode: 1, stdout: "", stderr: "Error: device is not booted" });
     await expect(recording).rejects.toThrow("simctl recordVideo failed (exit 1): Error: device is not booted");
@@ -151,7 +173,7 @@ describe("recordIOSVideo", () => {
       recorder.finish();
       await new Promise((resolve) => setTimeout(resolve, 0));
       marks.end();
-    }, { start: recorder.start, now });
+    }, { start: recorder.start, frameSeconds: noFrames, now });
     await expect(recording).rejects.toThrow("simctl recordVideo stopped before flow.yaml finished (exit 0)");
   });
 
@@ -162,7 +184,7 @@ describe("recordIOSVideo", () => {
       recorder.announce();
       await begun;
       marks.end();
-    }, { start: recorder.start, now, finalizeTimeoutMs: 20 });
+    }, { start: recorder.start, frameSeconds: noFrames, now, finalizeTimeoutMs: 20 });
     await expect(recording).rejects.toThrow("the simulator video recorder did not finish within 0.02 s");
   });
 });
@@ -171,6 +193,42 @@ describe("measuredWindow", () => {
   it("trimMeasuredWindow: recorder-ready 1000 ms, begin 1250 ms, end 3250 ms gives start 0.25 s, duration 2 s", () => {
     expect(measuredWindow({ readyAt: 1000, beginAt: 1250, endAt: 3250 }))
       .toEqual({ startSeconds: 0.25, durationSeconds: 2 });
+  });
+});
+
+describe("fitToScreenChanges", () => {
+  const window = { startSeconds: 0.25, durationSeconds: 8 };
+
+  it("starts half a second before the first change and ends a second after the last", () => {
+    expect(fitToScreenChanges(window, [0, 1.75, 2.5, 4.25])).toEqual({ startSeconds: 1.25, durationSeconds: 4 });
+  });
+
+  it("never reaches outside the measured window", () => {
+    expect(fitToScreenChanges(window, [0.5, 8])).toEqual(window);
+  });
+
+  it("ignores frames before begin and after end, and keeps the window when nothing changed inside it", () => {
+    expect(fitToScreenChanges(window, [0, 0.25, 9.5])).toEqual(window);
+  });
+});
+
+describe("readFrameSeconds", () => {
+  const FRAMES = [
+    "#format: frame checksums", "#version: 2", "#tb 0: 1/600", "#media_type 0: video",
+    "0,          0,          0,        1,   398, a1", "0,        300,        900,      600,   284, b2", "",
+  ].join("\n");
+
+  it("lists every frame's time from the raw recording without decoding it", async () => {
+    const exec = vi.fn(async () => ({ exitCode: 0, stdout: FRAMES, stderr: "" }));
+    await expect(readFrameSeconds("/run/raw.mov", exec)).resolves.toEqual([0, 1.5]);
+    expect(exec).toHaveBeenCalledWith(
+      "ffmpeg", ["-v", "error", "-i", "/run/raw.mov", "-map", "0:v:0", "-c", "copy", "-f", "framemd5", "-"], {},
+    );
+  });
+
+  it("fails with ffmpeg's output when it cannot read the recording", async () => {
+    const exec = vi.fn(async () => ({ exitCode: 1, stdout: "", stderr: "moov atom not found" }));
+    await expect(readFrameSeconds("/run/raw.mov", exec)).rejects.toThrow("ffmpeg could not read /run/raw.mov (exit 1): moov atom not found");
   });
 });
 

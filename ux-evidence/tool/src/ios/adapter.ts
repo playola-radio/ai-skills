@@ -15,7 +15,7 @@ import {
   type ScreenshotFiles,
 } from "./maestro.ts";
 import { renderIOSCase } from "./templates.ts";
-import { renderMarkScript, type recordIOSVideo, type serveFlowMarks } from "./video.ts";
+import { readFrameSeconds, renderMarkScript, type recordIOSVideo, type serveFlowMarks } from "./video.ts";
 import { acquireRunLock, runLockDirectory, type LockFiles } from "./preflight.ts";
 import { loadSavedSession, type SessionDependencies } from "./session.ts";
 import { developerEnvironment, type SimulatorDependencies, type withIOSSimulator } from "./simulator.ts";
@@ -143,7 +143,7 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
                   await server.close();
                 }
               },
-              { start: processes.start, now: dependencies.now },
+              { start: processes.start, frameSeconds: (path) => readFrameSeconds(path, processes.exec), now: dependencies.now },
             ),
           );
           return { screenshots: new Map(), videoPath: video.path, videoTrim: video.trim, warnings: [] };
