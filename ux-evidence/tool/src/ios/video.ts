@@ -21,7 +21,6 @@ export interface VideoRecorderDependencies {
 const RECORDING_STARTED = "Recording started";
 const READY_TIMEOUT_MS = 8000;
 const FINALIZE_TIMEOUT_MS = 30_000;
-const END_HOLD_MS = 1000;
 
 function tail(text: string, lineCount: number): string {
   return text.trimEnd().split("\n").slice(-lineCount).join("\n");
@@ -39,11 +38,10 @@ async function within<T>(promise: Promise<T>, timeoutMs: number, message: string
   }
 }
 
-// The raw video starts when the recorder is ready; the published part runs from begin to just after end, so
-// the last screen can settle, but never past the moment the recorder was stopped.
-export function measuredWindow(times: { readyAt: number; beginAt: number; endAt: number; stoppedAt: number }): VideoTrim {
-  const until = Math.min(times.endAt + END_HOLD_MS, times.stoppedAt);
-  return { startSeconds: (times.beginAt - times.readyAt) / 1000, durationSeconds: (until - times.beginAt) / 1000 };
+// The raw video starts when the recorder is ready; the published part runs from begin to end. Maestro marks the
+// end only after the last step has settled, so no hold is added.
+export function measuredWindow(times: { readyAt: number; beginAt: number; endAt: number }): VideoTrim {
+  return { startSeconds: (times.beginAt - times.readyAt) / 1000, durationSeconds: (times.endAt - times.beginAt) / 1000 };
 }
 
 export async function recordIOSVideo(
@@ -100,7 +98,6 @@ export async function recordIOSVideo(
     throw new Error("flow.yaml finished without starting the video");
   }
 
-  const stoppedAt = dependencies.now();
   stopping = true;
   recorder.interrupt();
   let stopped: ExecResult;
@@ -117,7 +114,7 @@ export async function recordIOSVideo(
   }
   if (readyAt === undefined || beginAt === undefined) throw new Error("flow.yaml finished without starting the video");
   if (endAt === undefined) throw new Error("flow.yaml finished without reaching the end of the recorded part");
-  return { path: rawPath, trim: measuredWindow({ readyAt, beginAt, endAt, stoppedAt }) };
+  return { path: rawPath, trim: measuredWindow({ readyAt, beginAt, endAt }) };
 }
 
 export interface MarkServer {

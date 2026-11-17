@@ -91,7 +91,7 @@ describe("recordIOSVideo", () => {
     expect(settled).toBe(false);
     recorder.finish();
     await expect(recording).resolves.toEqual({
-      path: "/run/head/recording.mov", trim: { startSeconds: 0, durationSeconds: 3.25 },
+      path: "/run/head/recording.mov", trim: { startSeconds: 0, durationSeconds: 2.25 },
     });
     expect(recorder.events.slice(-2)).toEqual(["interrupt", "recorder-exit"]);
   });
@@ -169,15 +169,8 @@ describe("recordIOSVideo", () => {
 
 describe("measuredWindow", () => {
   it("trimMeasuredWindow: recorder-ready 1000 ms, begin 1250 ms, end 3250 ms gives start 0.25 s, duration 2 s", () => {
-    expect(measuredWindow({ readyAt: 1000, beginAt: 1250, endAt: 3250, stoppedAt: 3250 }))
+    expect(measuredWindow({ readyAt: 1000, beginAt: 1250, endAt: 3250 }))
       .toEqual({ startSeconds: 0.25, durationSeconds: 2 });
-  });
-
-  it("keeps up to one second after the end so the last screen settles, within what was recorded", () => {
-    expect(measuredWindow({ readyAt: 1000, beginAt: 1250, endAt: 3250, stoppedAt: 9000 }))
-      .toEqual({ startSeconds: 0.25, durationSeconds: 3 });
-    expect(measuredWindow({ readyAt: 1000, beginAt: 1250, endAt: 3250, stoppedAt: 3750 }))
-      .toEqual({ startSeconds: 0.25, durationSeconds: 2.5 });
   });
 });
 
