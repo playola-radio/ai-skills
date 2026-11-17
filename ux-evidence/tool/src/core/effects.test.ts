@@ -62,4 +62,21 @@ describe("createOwnedProcesses", () => {
     expect(() => process.kill(-child!.pid!, 0)).toThrow();
     await running;
   }, 10_000);
+
+  it("gives up with a warning naming the process when its group outlives the forced stop", async () => {
+    let child: ChildProcess | undefined;
+    const spawnChild = (command: string, args: readonly string[]) =>
+      (child = spawn(command, [...args], { stdio: ["ignore", "pipe", "pipe"], detached: true }));
+    const warn = vi.fn();
+    const { exec, stopAll } = createOwnedProcesses(new AbortController().signal, {
+      spawnChild, graceMs: 100, afterKillMs: 200, warn, isGroupAlive: () => true,
+    });
+    const running = exec("sh", ["-c", "echo ready; sleep 30"]).catch(() => undefined);
+    await new Promise((resolve) => child!.stdout!.once("data", resolve));
+    const started = Date.now();
+    await stopAll();
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`process ${child!.pid}`));
+    await running;
+  }, 10_000);
 });
