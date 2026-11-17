@@ -142,6 +142,19 @@ describe("recordIOSVideo", () => {
     await expect(recording).rejects.toThrow("simctl recordVideo failed (exit 1): Error: device is not booted");
   });
 
+  it("fails when the recorder stops on its own before the flow finishes", async () => {
+    const recorder = fakeRecorder();
+    const recording = recordIOSVideo(input, async (marks) => {
+      const begun = marks.begin();
+      recorder.announce();
+      await begun;
+      recorder.finish();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      marks.end();
+    }, { start: recorder.start, now });
+    await expect(recording).rejects.toThrow("simctl recordVideo stopped before flow.yaml finished (exit 0)");
+  });
+
   it("gives up waiting on a recorder that does not finish after the interrupt", async () => {
     const recorder = fakeRecorder();
     const recording = recordIOSVideo(input, async (marks) => {

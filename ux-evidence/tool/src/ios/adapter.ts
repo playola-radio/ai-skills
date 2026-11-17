@@ -51,9 +51,6 @@ function asIOSConfig(config: EvidenceConfig): IOSConfig {
   return config;
 }
 
-function iosConfig(context: RecordContext): IOSConfig {
-  return asIOSConfig(context.config);
-}
 
 const OUTPUT_PREFIX: Record<RevisionName, string> = { base: "before", head: "after" };
 
@@ -62,7 +59,7 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
 
   return {
     async preflight(context) {
-      const config = iosConfig(context);
+      const config = asIOSConfig(context.config);
       // dispose, a failed prepare and an interrupt all share this one teardown, run once.
       const owned = createCleanupRegistry(context.cleanup.signal);
       let teardown: Promise<void> | undefined;
@@ -91,7 +88,7 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
     },
 
     async prepare(context) {
-      const config = iosConfig(context);
+      const config = asIOSConfig(context.config);
       if (run === undefined) throw new Error("the iOS adapter must run preflight before prepare");
       const { processes, owned, dispose, sessionJson } = run;
       const ownedContext: RecordContext = { ...context, cleanup: owned };
@@ -100,6 +97,9 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
         const flowPath = posix.join(context.caseDirectory, "flow.yaml");
         const names = declaredScreenshotNames(await dependencies.readTextFile(flowPath), flowPath);
         const functional = context.manifest.classification === "functional";
+        if (functional && names.length > 0) {
+          throw new Error(`${flowPath} records a video (functional case); remove its takeScreenshot steps or make the case visual`);
+        }
         if (!functional && names.length === 0) throw new Error(`${flowPath} must take at least one screenshot (takeScreenshot: <name>)`);
         const setup = (await dependencies.fileExists(setupPath)) ? setupPath : undefined;
 

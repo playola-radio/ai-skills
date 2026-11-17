@@ -214,12 +214,21 @@ describe("createIOSAdapter", () => {
 
   it("a failed flow closes the mark server and publishes no video", async () => {
     const { adapter, deps, events } = harness();
+    deps.readTextFile = async () => "appId: fm.app\n---\n- tapOn: All\n";
     deps.runMaestro = vi.fn(async () => { throw new Error("the Maestro flow failed (exit 1)"); });
     const recordContext = context({ manifest: { ...manifest, classification: "functional" } });
     await adapter.preflight(recordContext);
     const prepared = await adapter.prepare(recordContext);
     await expect(prepared.capture("head")).rejects.toThrow("the Maestro flow failed (exit 1)");
     expect(events).toContain("marks-closed");
+  });
+
+  it("refuses screenshots in a functional flow, which records only a video", async () => {
+    const { adapter, deps } = harness();
+    const recordContext = context({ manifest: { ...manifest, classification: "functional" } });
+    await adapter.preflight(recordContext);
+    await expect(adapter.prepare(recordContext)).rejects.toThrow("remove its takeScreenshot steps or make the case visual");
+    expect(deps.buildIOSRevisions).not.toHaveBeenCalled();
   });
 
   it("creates iOS cases from the templates, using the configured app id", () => {

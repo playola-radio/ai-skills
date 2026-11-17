@@ -58,6 +58,8 @@ export async function recordIOSVideo(
   let readyAt: number | undefined;
   let beginAt: number | undefined;
   let endAt: number | undefined;
+  let stopping = false;
+  let stoppedEarly = false;
 
   const begin = async () => {
     if (recorder !== undefined) throw new Error("flow.yaml began the video twice");
@@ -75,6 +77,7 @@ export async function recordIOSVideo(
       },
     });
     recorder = started;
+    void started.finished.then(() => { if (!stopping) stoppedEarly = true; }, () => undefined);
     const exitedEarly = started.finished.then((result) => {
       throw new Error(`simctl recordVideo exited before recording (exit ${result.exitCode}): ${tail(result.stderr || result.stdout, 5)}`);
     });
@@ -98,6 +101,7 @@ export async function recordIOSVideo(
   }
 
   const stoppedAt = dependencies.now();
+  stopping = true;
   recorder.interrupt();
   let stopped: ExecResult;
   try {
@@ -107,6 +111,7 @@ export async function recordIOSVideo(
     throw flowError ?? stopError;
   }
   if (flowError !== undefined) throw flowError;
+  if (stoppedEarly) throw new Error(`simctl recordVideo stopped before flow.yaml finished (exit ${stopped.exitCode})`);
   if (stopped.exitCode !== 0) {
     throw new Error(`simctl recordVideo failed (exit ${stopped.exitCode}): ${tail(stopped.stderr || stopped.stdout, 5)}`);
   }
