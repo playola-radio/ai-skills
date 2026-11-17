@@ -14,7 +14,7 @@ import {
   type runMaestro,
   type ScreenshotFiles,
 } from "./maestro.ts";
-import { acquireRunLock, runLockPath, type LockFiles } from "./preflight.ts";
+import { acquireRunLock, runLockDirectory, type LockFiles } from "./preflight.ts";
 import { loadSavedSession, type SessionDependencies } from "./session.ts";
 import type { SimulatorDependencies, withIOSSimulator } from "./simulator.ts";
 
@@ -59,7 +59,7 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
       // Everything this run creates is registered here, so dispose and an interrupt share one teardown.
       const owned = createCleanupRegistry(context.cleanup.signal);
       context.cleanup.add(() => owned.run());
-      const release = await acquireRunLock(runLockPath(dependencies.homeDirectory), dependencies.pid, {
+      const release = await acquireRunLock(runLockDirectory(dependencies.homeDirectory), dependencies.pid, {
         files: dependencies.lockFiles,
         isProcessAlive: dependencies.isProcessAlive,
       });

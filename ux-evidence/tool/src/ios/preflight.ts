@@ -7,41 +7,45 @@ import { developerEnvironment, simctl } from "./simulator.ts";
 
 const SETUP_HINT = "see qa/ux/README.md";
 
-export function runLockPath(homeDirectory: string): string {
-  return join(homeDirectory, ".cache", "playola-ux", "ios", "record.lock");
+export function runLockDirectory(homeDirectory: string): string {
+  return join(homeDirectory, ".cache", "playola-ux", "ios");
 }
 
 export interface LockFiles {
   makeDirectory(path: string): Promise<void>;
-  // Resolves false when the file already exists.
-  createExclusive(path: string, content: string): Promise<boolean>;
-  readText(path: string): Promise<string | undefined>;
+  writeFile(path: string): Promise<void>;
+  list(directory: string): Promise<readonly string[]>;
   remove(path: string): Promise<void>;
 }
 
-// One iOS recording at a time: runs share the SPM cache and the simulator service. A lock left by a
-// process that no longer exists is taken over.
+const LOCK_ENTRY = /^record-(\d+)\.lock$/;
+
+// One iOS recording at a time: runs share the SPM cache and the simulator service. Each run writes its
+// own record-<pid>.lock and only then looks for others, so of two runs starting together at least one
+// sees the other (both may back off; neither proceeds alongside the other). Entries of exited
+// processes are removed; no run ever removes a live run's entry.
 export async function acquireRunLock(
-  path: string,
+  directory: string,
   pid: number,
   dependencies: { files: LockFiles; isProcessAlive(pid: number): boolean },
 ): Promise<() => Promise<void>> {
-  const { files } = dependencies;
-  await files.makeDirectory(join(path, ".."));
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (await files.createExclusive(path, `${pid}\n`)) {
-      let released: Promise<void> | undefined;
-      return () => (released ??= (async () => {
-        if ((await files.readText(path))?.trim() === String(pid)) await files.remove(path);
-      })());
-    }
-    const holder = Number.parseInt((await files.readText(path)) ?? "", 10);
-    if (Number.isInteger(holder) && holder > 0 && dependencies.isProcessAlive(holder)) {
-      throw new Error(`another iOS recording is running (pid ${holder}); wait for it to finish`);
-    }
-    await files.remove(path);
+  const { files, isProcessAlive } = dependencies;
+  await files.makeDirectory(directory);
+  const own = join(directory, `record-${pid}.lock`);
+  await files.writeFile(own);
+  const running: number[] = [];
+  for (const name of await files.list(directory)) {
+    const holder = Number(LOCK_ENTRY.exec(name)?.[1] ?? Number.NaN);
+    if (!Number.isInteger(holder) || holder === pid) continue;
+    if (isProcessAlive(holder)) running.push(holder);
+    else await files.remove(join(directory, name));
   }
-  throw new Error(`could not take the iOS recording lock at ${path}`);
+  if (running.length > 0) {
+    await files.remove(own);
+    throw new Error(`another iOS recording is running (pid ${running[0]}); wait for it to finish`);
+  }
+  let released: Promise<void> | undefined;
+  return () => (released ??= files.remove(own));
 }
 
 async function firstLine(exec: Exec, command: string, args: readonly string[], env: NodeJS.ProcessEnv, fix: string): Promise<string> {

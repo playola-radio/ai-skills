@@ -1,4 +1,4 @@
-import { access, chmod, copyFile, link, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createOwnedProcesses, realExec } from "../core/effects.ts";
@@ -27,26 +27,10 @@ export function isProcessAlive(pid: number): boolean {
   }
 }
 
-export const lockFiles: LockFiles = {
+const lockFiles: LockFiles = {
   async makeDirectory(path) { await mkdir(path, { recursive: true }); },
-  // The pid is written to a private file first and linked into place, so no other run can ever read a
-  // lock that exists but is still empty (which it would take over as stale).
-  async createExclusive(path, content) {
-    const staged = `${path}.${process.pid}.${Date.now()}`;
-    await writeFile(staged, content, { flag: "wx" });
-    try {
-      await link(staged, path);
-      return true;
-    } catch (error) {
-      if (errorCode(error) === "EEXIST") return false;
-      throw error;
-    } finally {
-      await rm(staged, { force: true });
-    }
-  },
-  async readText(path) {
-    try { return await readFile(path, "utf8"); } catch { return undefined; }
-  },
+  async writeFile(path) { await writeFile(path, ""); },
+  list: (directory) => readdir(directory),
   async remove(path) { await rm(path, { force: true }); },
 };
 

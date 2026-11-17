@@ -8,8 +8,8 @@ function tail(text: string, lineCount: number): string {
   return text.trimEnd().split("\n").slice(-lineCount).join("\n");
 }
 
-export function developerEnvironment(settings: IOSSettings, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return { ...base, DEVELOPER_DIR: join(settings.xcodePath, "Contents", "Developer") };
+export function developerEnvironment(settings: IOSSettings): NodeJS.ProcessEnv {
+  return { ...process.env, DEVELOPER_DIR: join(settings.xcodePath, "Contents", "Developer") };
 }
 
 export async function simctl(settings: IOSSettings, exec: Exec, args: readonly string[]): Promise<string> {
@@ -49,18 +49,23 @@ export async function withIOSSimulator<T>(
 
   const name = `playola-ux-${basename(context.runDirectory)}-${revision}`;
   if (context.cleanup.signal.aborted) throw new Error(`interrupted before creating the ${revision} simulator`);
-  // Created without the cancellable runner: an interrupt mid-create must not lose the new device's id.
-  const udid = (await simctl(settings, dependencies.teardownExec, ["create", name, settings.deviceType, settings.runtime])).trim();
-  if (!UDID.test(udid)) throw new Error(`simctl create returned an unexpected device id: ${udid}`);
-
+  // Created without the cancellable runner, and its deletion registered first and waiting on it, so an
+  // interrupt mid-create still deletes the device once it exists.
+  const created = simctl(settings, dependencies.teardownExec, ["create", name, settings.deviceType, settings.runtime])
+    .then((stdout) => stdout.trim());
   let teardown: Promise<void> | undefined;
   const removeSimulator = () => (teardown ??= (async () => {
+    const udid = await created.catch(() => undefined);
+    if (udid === undefined || !UDID.test(udid)) return;
     await dependencies.stopChildren();
     await simctl(settings, dependencies.teardownExec, ["terminate", udid, settings.bundleId]).catch(() => undefined);
     await simctl(settings, dependencies.teardownExec, ["shutdown", udid]).catch(() => undefined);
     await simctl(settings, dependencies.teardownExec, ["delete", udid]);
   })());
   context.cleanup.add(removeSimulator);
+
+  const udid = await created;
+  if (!UDID.test(udid)) throw new Error(`simctl create returned an unexpected device id: ${udid}`);
 
   try {
     await run(["boot", udid]);

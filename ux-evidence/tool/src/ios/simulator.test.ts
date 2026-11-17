@@ -92,4 +92,27 @@ describe("withIOSSimulator", () => {
     await expect(withIOSSimulator(input(cleanup), dependencies, async () => undefined)).rejects.toThrow("interrupted");
     expect(calls.at(-1)).toEqual(["xcrun", "simctl", "delete", CREATED]);
   });
+
+  it("an interrupt while create is still running deletes the device once create finishes", async () => {
+    const cleanup = createCleanupRegistry();
+    const { calls, dependencies } = harness();
+    const create = dependencies.teardownExec;
+    let finishCreate: () => void = () => undefined;
+    const createStarted = new Promise<void>((started) => {
+      dependencies.teardownExec = vi.fn<Exec>(async (command, args, options) => {
+        if (args[1] === "create") {
+          started();
+          await new Promise<void>((resolve) => { finishCreate = resolve; });
+        }
+        return create(command, args, options);
+      });
+    });
+    const running = withIOSSimulator(input(cleanup), dependencies, async () => undefined);
+    running.catch(() => undefined);
+    await createStarted;
+    const cleaning = cleanup.run();
+    finishCreate();
+    await cleaning;
+    expect(calls.filter((call) => call[2] === "delete")).toEqual([["xcrun", "simctl", "delete", CREATED]]);
+  });
 });

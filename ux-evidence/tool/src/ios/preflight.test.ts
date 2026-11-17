@@ -1,52 +1,60 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Exec, ExecResult } from "../core/effects.ts";
 import { IOS_CONFIG } from "../core/test-fixtures.ts";
-import { acquireRunLock, checkIOSTools, runLockPath, type LockFiles } from "./preflight.ts";
+import { acquireRunLock, checkIOSTools, runLockDirectory, type LockFiles } from "./preflight.ts";
 
-function memoryLock(initial?: string) {
-  let content = initial;
+function memoryLock(initial: string[] = []) {
+  const entries = new Set(initial);
+  const name = (path: string) => path.split("/").at(-1)!;
   const files: LockFiles = {
     makeDirectory: vi.fn(async () => {}),
-    createExclusive: vi.fn(async (_path: string, text: string) => {
-      if (content !== undefined) return false;
-      content = text;
-      return true;
-    }),
-    readText: vi.fn(async () => content),
-    remove: vi.fn(async () => { content = undefined; }),
+    writeFile: vi.fn(async (path: string) => { entries.add(name(path)); }),
+    list: vi.fn(async () => [...entries, "spm"]),
+    remove: vi.fn(async (path: string) => { entries.delete(name(path)); }),
   };
-  return { files, current: () => content };
+  return { files, entries: () => [...entries].sort() };
 }
 
 describe("acquireRunLock", () => {
-  const path = runLockPath("/home/u");
+  const directory = runLockDirectory("/home/u");
 
-  it("lives under ~/.cache/playola-ux/ios", () => {
-    expect(path).toBe("/home/u/.cache/playola-ux/ios/record.lock");
+  it("writes record-<pid>.lock under ~/.cache/playola-ux/ios and removes it on release", async () => {
+    const lock = memoryLock();
+    const release = await acquireRunLock(directory, 100, { files: lock.files, isProcessAlive: () => true });
+    expect(lock.files.writeFile).toHaveBeenCalledWith("/home/u/.cache/playola-ux/ios/record-100.lock");
+    await release();
+    expect(lock.entries()).toEqual([]);
   });
 
-  it("a second recording fails at once while the first is running", async () => {
+  it("a second recording fails at once while the first is running, leaving the first's entry", async () => {
     const lock = memoryLock();
-    const release = await acquireRunLock(path, 100, { files: lock.files, isProcessAlive: () => true });
-    await expect(acquireRunLock(path, 200, { files: lock.files, isProcessAlive: () => true }))
+    const release = await acquireRunLock(directory, 100, { files: lock.files, isProcessAlive: () => true });
+    await expect(acquireRunLock(directory, 200, { files: lock.files, isProcessAlive: () => true }))
       .rejects.toThrow("another iOS recording is running (pid 100); wait for it to finish");
+    expect(lock.entries()).toEqual(["record-100.lock"]);
     await release();
-    await expect(acquireRunLock(path, 200, { files: lock.files, isProcessAlive: () => true })).resolves.toBeTypeOf("function");
+    await expect(acquireRunLock(directory, 200, { files: lock.files, isProcessAlive: () => true })).resolves.toBeTypeOf("function");
   });
 
-  it("takes over a lock left by a process that has exited", async () => {
-    const lock = memoryLock("100\n");
-    await acquireRunLock(path, 200, { files: lock.files, isProcessAlive: (pid) => pid !== 100 });
-    expect(lock.current()).toBe("200\n");
+  it("removes entries left by processes that have exited", async () => {
+    const lock = memoryLock(["record-100.lock", "record-101.lock"]);
+    await acquireRunLock(directory, 200, { files: lock.files, isProcessAlive: (pid) => pid === 200 });
+    expect(lock.entries()).toEqual(["record-200.lock"]);
   });
 
-  it("release leaves a lock another run has since taken", async () => {
-    const lock = memoryLock();
-    const release = await acquireRunLock(path, 100, { files: lock.files, isProcessAlive: () => false });
-    await lock.files.remove(path);
-    await acquireRunLock(path, 200, { files: lock.files, isProcessAlive: () => true });
-    await release();
-    expect(lock.current()).toBe("200\n");
+  it("of two runs starting together, never both proceed", async () => {
+    const lock = memoryLock(["record-50.lock"]);
+    let wrote = 0;
+    let bothWrote: () => void = () => undefined;
+    const barrier = new Promise<void>((resolve) => { bothWrote = resolve; });
+    const write = lock.files.writeFile;
+    lock.files.writeFile = async (path) => { await write(path); if (++wrote === 2) bothWrote(); await barrier; };
+    const alive = (pid: number) => pid !== 50;
+    const results = await Promise.allSettled([
+      acquireRunLock(directory, 100, { files: lock.files, isProcessAlive: alive }),
+      acquireRunLock(directory, 200, { files: lock.files, isProcessAlive: alive }),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled").length).toBeLessThanOrEqual(1);
   });
 });
 

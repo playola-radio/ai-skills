@@ -58,8 +58,8 @@ function tail(text: string, lineCount: number): string {
   return text.trimEnd().split("\n").slice(-lineCount).join("\n");
 }
 
-export function maestroEnvironment(settings: IOSSettings, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return { ...developerEnvironment(settings, base), JAVA_HOME: settings.javaHome, MAESTRO_CLI_NO_ANALYTICS: "1" };
+export function maestroEnvironment(settings: IOSSettings): NodeJS.ProcessEnv {
+  return { ...developerEnvironment(settings), JAVA_HOME: settings.javaHome, MAESTRO_CLI_NO_ANALYTICS: "1" };
 }
 
 // Debug output is redirected so Maestro writes nothing under ~/.maestro for this run.

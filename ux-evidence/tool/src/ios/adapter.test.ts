@@ -20,12 +20,12 @@ function context(overrides: Partial<RecordContext> = {}): RecordContext {
 
 function harness(options: { failBuild?: boolean; sessionStatus?: number; missing?: string } = {}) {
   const events: string[] = [];
-  let lock: string | undefined;
+  const entries = new Set<string>();
   const lockFiles: LockFiles = {
     makeDirectory: async () => {},
-    createExclusive: async (_path, text) => { if (lock !== undefined) return false; lock = text; return true; },
-    readText: async () => lock,
-    remove: async () => { events.push("unlock"); lock = undefined; },
+    writeFile: async (path) => { entries.add(path.split("/").at(-1)!); },
+    list: async () => [...entries],
+    remove: async (path) => { events.push("unlock"); entries.delete(path.split("/").at(-1)!); },
   };
   const deps: IOSAdapterDependencies = {
     homeDirectory: "/home/u",
@@ -63,7 +63,7 @@ function harness(options: { failBuild?: boolean; sessionStatus?: number; missing
     runMaestro: vi.fn(async () => {}),
     collectScreenshots: vi.fn(async (outputDirectory: string) => new Map([["stations-list", `${outputDirectory}/stations-list.png`]])),
   };
-  return { deps, events, adapter: createIOSAdapter(deps), locked: () => lock };
+  return { deps, events, adapter: createIOSAdapter(deps), locked: () => [...entries].join(",") || undefined };
 }
 
 describe("createIOSAdapter", () => {
@@ -101,7 +101,7 @@ describe("createIOSAdapter", () => {
     const { adapter, events, locked } = harness();
     const recordContext = context();
     await adapter.preflight(recordContext);
-    expect(locked()).toBe("42\n");
+    expect(locked()).toBe("record-42.lock");
     const prepared = await adapter.prepare(recordContext);
     await prepared.dispose();
     expect(events.slice(-2)).toEqual(["remove-worktrees", "unlock"]);
