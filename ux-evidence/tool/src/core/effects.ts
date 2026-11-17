@@ -30,6 +30,16 @@ const spawnInOwnGroup: SpawnChild = (command, args, options) =>
   spawn(command, [...args], { cwd: options.cwd, env: options.env, stdio: ["ignore", "pipe", "pipe"], detached: true });
 
 const STOP_GRACE_MS = 5000;
+const GROUP_POLL_MS = 50;
+
+function groupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 
 // Children run in their own process group so a terminal Ctrl-C reaches only this process; the abort
 // signal (or stopAll) then stops each group and waits for it to exit before any cleanup touches its files.
@@ -41,16 +51,26 @@ export function createOwnedProcesses(
   const graceMs = options.graceMs ?? STOP_GRACE_MS;
   const running = new Map<ChildProcess, Promise<void>>();
 
-  function stop(child: ChildProcess, exited: Promise<void>): Promise<void> {
-    // The whole group is signalled even after its leader exits: a descendant still holding the output
-    // pipes keeps "close" from firing until it is gone too.
+  // Stops the child's whole process group and resolves only once no member is left, escalating to
+  // SIGKILL after the grace period. Waiting on the group (not the leader's exit) catches descendants that
+  // ignore SIGTERM, whether or not they still hold the output pipes.
+  async function stop(child: ChildProcess, exited: Promise<void>): Promise<void> {
+    const pid = child.pid;
+    if (pid === undefined) return exited;
     const send = (name: NodeJS.Signals) => {
-      if (child.pid === undefined) return;
-      try { process.kill(-child.pid, name); } catch { /* group already gone */ }
+      try { process.kill(-pid, name); } catch { /* group already gone */ }
     };
+    const deadline = Date.now() + graceMs;
+    let killed = false;
     send("SIGTERM");
-    const escalate = setTimeout(() => send("SIGKILL"), graceMs);
-    return exited.finally(() => clearTimeout(escalate));
+    while (groupAlive(pid)) {
+      if (!killed && Date.now() >= deadline) {
+        send("SIGKILL");
+        killed = true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, GROUP_POLL_MS));
+    }
+    await exited;
   }
 
   const stopAll = async () => {

@@ -50,15 +50,17 @@ function iosConfig(context: RecordContext): IOSConfig {
 const OUTPUT_PREFIX: Record<RevisionName, string> = { base: "before", head: "after" };
 
 export function createIOSAdapter(dependencies: IOSAdapterDependencies): PlatformAdapter {
-  let run: { processes: OwnedProcesses; owned: ReturnType<typeof createCleanupRegistry>; sessionJson: string } | undefined;
+  let run: { processes: OwnedProcesses; owned: ReturnType<typeof createCleanupRegistry>; dispose(): Promise<void>; sessionJson: string } | undefined;
 
   return {
     async preflight(context) {
       const config = iosConfig(context);
       if (context.manifest.classification === "functional") throw new Error(NOT_YET);
-      // Everything this run creates is registered here, so dispose and an interrupt share one teardown.
+      // dispose, a failed prepare and an interrupt all share this one teardown, run once.
       const owned = createCleanupRegistry(context.cleanup.signal);
-      context.cleanup.add(() => owned.run());
+      let teardown: Promise<void> | undefined;
+      const dispose = () => (teardown ??= owned.run());
+      context.cleanup.add(dispose);
       const release = await acquireRunLock(runLockDirectory(dependencies.homeDirectory), dependencies.pid, {
         files: dependencies.lockFiles,
         isProcessAlive: dependencies.isProcessAlive,
@@ -69,10 +71,10 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
         const checked = await dependencies.checkTools(config, processes.exec);
         await assertSecretsPresent(config.ios, dependencies.fileExists);
         const session = await loadSavedSession(config.ios, { ...dependencies.session, homeDirectory: dependencies.homeDirectory });
-        run = { processes, owned, sessionJson: session.json };
+        run = { processes, owned, dispose, sessionJson: session.json };
         return checked;
       } catch (error) {
-        await owned.run();
+        await dispose();
         throw error;
       }
     },
@@ -80,9 +82,8 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
     async prepare(context) {
       const config = iosConfig(context);
       if (run === undefined) throw new Error("the iOS adapter must run preflight before prepare");
-      const { processes, owned, sessionJson } = run;
+      const { processes, owned, dispose, sessionJson } = run;
       const ownedContext: RecordContext = { ...context, cleanup: owned };
-      const dispose = () => owned.run();
       try {
         const setupPath = posix.join(context.caseDirectory, "setup.yaml");
         const flowPath = posix.join(context.caseDirectory, "flow.yaml");

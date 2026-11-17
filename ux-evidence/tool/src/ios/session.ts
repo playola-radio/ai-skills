@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { IOSSettings } from "../core/config.ts";
 import type { Exec } from "../core/effects.ts";
@@ -10,7 +9,7 @@ export const MIN_REMAINING_SECONDS = 1800;
 export const CLIENT_CONFIG_PATH = "/v1/users/me/client-config";
 const REQUEST_TIMEOUT_MS = 10_000;
 
-export function sessionPath(homeDirectory: string = homedir()): string {
+export function sessionPath(homeDirectory: string): string {
   return join(homeDirectory, ".config", "playola-ux", "ios-staging-auth.json");
 }
 

@@ -50,4 +50,16 @@ describe("createOwnedProcesses", () => {
     expect(Date.now() - started).toBeLessThan(5000);
     await expect(running).resolves.toMatchObject({ stdout: "ready\n" });
   }, 10_000);
+
+  it("kills a descendant that ignores SIGTERM and no longer holds the output pipes", async () => {
+    let child: ChildProcess | undefined;
+    const spawnChild = (command: string, args: readonly string[]) =>
+      (child = spawn(command, [...args], { stdio: ["ignore", "pipe", "pipe"], detached: true }));
+    const { exec, stopAll } = createOwnedProcesses(new AbortController().signal, { spawnChild, graceMs: 200 });
+    const running = exec("sh", ["-c", "(trap '' TERM; exec sleep 30 >/dev/null 2>&1) & echo ready; wait"]);
+    await new Promise((resolve) => child!.stdout!.once("data", resolve));
+    await stopAll();
+    expect(() => process.kill(-child!.pid!, 0)).toThrow();
+    await running;
+  }, 10_000);
 });
