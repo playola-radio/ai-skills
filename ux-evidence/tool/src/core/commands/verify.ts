@@ -1,11 +1,12 @@
 import { posix } from "node:path";
+import type { EvidenceConfig } from "../config.ts";
 import type { ReadTextFile } from "../domain.ts";
 import type { Exec } from "../effects.ts";
-import { changedCaseIds, decideEvidenceFreshness, hasRelevantClientChange } from "../freshness.ts";
+import { changedCaseIds, decideEvidenceFreshness, hasChangeRequiringEvidence } from "../freshness.ts";
 import { changedPathsBetween, resolveGitRevisions } from "../git.ts";
 import { assertValidCaseId } from "../case-id.ts";
 import { renderEvidenceComment } from "../render.ts";
-import { parseEvidenceResult, type EvidenceResult } from "../results.ts";
+import { isOutdatedResult, OUTDATED_RESULT_REASON, parseEvidenceResult, type EvidenceResult } from "../results.ts";
 
 export interface VerificationReport {
   current: boolean;
@@ -44,32 +45,37 @@ async function evidenceFilesIntact(
 }
 
 export async function verifyEvidence(
-  input: { repoRoot: string },
+  input: { repoRoot: string; config: EvidenceConfig },
   dependencies: VerifyDependencies,
 ): Promise<VerificationReport> {
-  const { repoRoot } = input;
+  const { repoRoot, config } = input;
   const { exec } = dependencies;
-  const { head, base } = await resolveGitRevisions(repoRoot, exec);
+  const { head, base } = await resolveGitRevisions(repoRoot, config.baseBranch, exec);
   const branchChanges = await changedPathsBetween(repoRoot, base, head, exec);
   const caseIds: string[] = [];
   for (const caseId of changedCaseIds(branchChanges)) {
     assertValidCaseId(caseId);
     if (await dependencies.fileExists(posix.join(repoRoot, "qa", "ux", caseId, "evidence.yaml"))) caseIds.push(caseId);
   }
-  const missingEvidenceForClientChanges = caseIds.length === 0 && hasRelevantClientChange(branchChanges);
+  const missingEvidenceForClientChanges = caseIds.length === 0 && hasChangeRequiringEvidence(branchChanges, config);
 
   const cases = [];
   for (const caseId of caseIds) {
     const path = resultPath(repoRoot, caseId);
-    const recorded = (await dependencies.fileExists(path))
-      ? parseEvidenceResult(await dependencies.readTextFile(path))
-      : undefined;
+    const recordedText = (await dependencies.fileExists(path)) ? await dependencies.readTextFile(path) : undefined;
+    if (recordedText !== undefined && isOutdatedResult(recordedText)) {
+      cases.push({ caseId, current: false, reason: OUTDATED_RESULT_REASON });
+      continue;
+    }
+    const recorded = recordedText === undefined ? undefined : parseEvidenceResult(recordedText);
     if (recorded !== undefined) assertValidCaseId(recorded.caseId);
     const recordedHead = recorded?.headCommit;
     const changedSinceRecordedHead = recordedHead === undefined || recordedHead === head
       ? []
       : await changedPathsBetween(repoRoot, recordedHead, head, exec);
-    const decision = decideEvidenceFreshness({ recordedHead, currentHead: head, changedSinceRecordedHead, caseId });
+    const decision = decideEvidenceFreshness({
+      recordedHead, currentHead: head, changedSinceRecordedHead, caseId, config,
+    });
     const intact = !decision.current || recorded === undefined || recorded.baseCommit === base
       && await evidenceFilesIntact(repoRoot, caseId, recorded, dependencies);
     cases.push({ caseId, ...(intact ? decision : { current: false, reason: EVIDENCE_FILES_STALE }) });

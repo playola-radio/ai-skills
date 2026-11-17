@@ -1,4 +1,5 @@
-import type { Exec } from "../core/effects.ts";
+import { posix } from "node:path";
+import type { Exec, PathStat } from "../core/effects.ts";
 
 const SETUP_HINT = "run `make ux-evidence-setup`";
 
@@ -31,4 +32,19 @@ export async function collectToolVersions(probes: ToolProbes): Promise<Record<st
     ffmpeg: await firstLine(probes.exec, "ffmpeg", ["-version"], `install ffmpeg, then ${SETUP_HINT}`),
     docker: await firstLine(probes.exec, "docker", ["--version"], `install and start Docker, then ${SETUP_HINT}`),
   };
+}
+
+export async function resolveDumpMetadata(input: {
+  environment: NodeJS.ProcessEnv;
+  homeDirectory: string;
+  stat: PathStat;
+}): Promise<{ path: string; sizeBytes: number; modifiedAt: string }> {
+  const directory = input.environment.CENTRAL_DB_CACHE ?? posix.join(input.homeDirectory, "playola", ".db-cache");
+  const path = posix.join(directory, "production.dump");
+  try {
+    const { size, mtime } = await input.stat(path);
+    return { path, sizeBytes: size, modifiedAt: mtime.toISOString() };
+  } catch {
+    throw new Error(`production dump not found at ${path}; run \`make db-download-production\``);
+  }
 }

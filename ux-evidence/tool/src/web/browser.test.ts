@@ -1,5 +1,6 @@
 import type { Browser, BrowserContextOptions } from "playwright";
 import { describe, expect, it } from "vitest";
+import { WEB_CONFIG } from "../core/test-fixtures.ts";
 import { captureRevision, type CaptureRevisionInput } from "./browser.ts";
 import type { EvidenceFlow } from "./flow-api.ts";
 
@@ -36,7 +37,7 @@ function setup(options: FakeOptions = {}) {
   };
   const input: CaptureRevisionInput = {
     revision: "base", classification: "functional", clientUrl: "http://localhost:5173",
-    startPath: "/stations", flow, outputDirectory: "/out",
+    startPath: "/stations", flow, outputDirectory: "/out", settings: WEB_CONFIG.web,
   };
   return { events, contextOptions, launch, input };
 }
@@ -61,6 +62,13 @@ describe("captureRevision", () => {
     expect(contextOptions[0]).toMatchObject({ viewport: { width: 1440, height: 900 }, locale: "en-US", timezoneId: "America/Chicago" });
     expect(contextOptions[0].recordVideo).toBeUndefined();
     expect(capture.videoPath).toBe("/out/raw.webm");
+  });
+
+  it("takes viewport, locale and timezone from the repository settings", async () => {
+    const { contextOptions, launch, input } = setup();
+    const settings = { viewport: { width: 390, height: 844 }, locale: "fr-FR", timezoneId: "Europe/Paris" };
+    await captureRevision({ ...input, settings }, launch);
+    expect(contextOptions[1]).toMatchObject({ ...settings, recordVideo: { dir: "/out", size: settings.viewport } });
   });
 
   it("does not record video for visual cases", async () => {

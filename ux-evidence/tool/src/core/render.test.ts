@@ -13,12 +13,14 @@ const artifact = (path: string, fields: Partial<ArtifactRecord>): ArtifactRecord
 });
 
 const baseResult: EvidenceResult = {
-  version: 1,
+  version: 2,
+  platform: "web",
   caseId: "weekly-play-counts",
   classification: "functional",
   baseCommit: "1234567890abcdef",
   headCommit: "abcdef0123456789",
-  dump: { path: "dump.sql", modifiedAt: "2026-11-11T08:30:00.000Z", sizeBytes: 5 },
+  toolCommit: "0f0f0f0f0f0f0f0f",
+  environment: { dump: { path: "dump.sql", modifiedAt: "2026-11-11T08:30:00.000Z", sizeBytes: 5 } },
   revisions: { base: passed, head: passed },
   artifacts: [],
   tools: {},
@@ -160,6 +162,17 @@ describe("renderEvidenceComment", () => {
     const md = renderEvidenceComment(warningResult).markdown;
     expect(md).toContain("Data: production dump from 2026-11-11");
     expect(md).toContain("Warning (base): dump has migrations this revision lacks: 20261101-x.js");
+  });
+
+  it("describes the simulator for an iOS result", () => {
+    const md = renderEvidenceComment({
+      ...functionalResult,
+      platform: "ios",
+      environment: {
+        deviceType: "iPhone-17-Pro", runtime: "iOS-27-1", xcodeVersion: "27.1", apiHost: "https://api.example",
+      },
+    }).markdown;
+    expect(md).toContain("Device: iPhone-17-Pro on iOS-27-1, Xcode 27.1, API https://api.example");
   });
 
   it("refuses to render a result with a failed revision", () => {

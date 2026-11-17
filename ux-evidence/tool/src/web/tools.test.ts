@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Exec } from "../core/effects.ts";
-import { collectToolVersions } from "./tools.ts";
+import { collectToolVersions, resolveDumpMetadata } from "./tools.ts";
 import { nodeVersionError } from "../core/node-version.ts";
 
 function build(options: { ffmpeg?: "ok" | "missing" | "fails"; docker?: "ok" | "missing"; chromiumInstalled?: boolean } = {}) {
@@ -47,5 +47,25 @@ describe("nodeVersionError", () => {
 
   it.each(["22.23.4", "23.9.0", "20.11.0"])("rejects Node %s with a clear message", (version) => {
     expect(nodeVersionError(version)).toBe(`UX evidence needs Node 24 or newer (found ${version})`);
+  });
+});
+
+describe("resolveDumpMetadata", () => {
+  it("prefers CENTRAL_DB_CACHE for the dump", async () => {
+    await expect(resolveDumpMetadata({ environment: { CENTRAL_DB_CACHE: "/cache" }, homeDirectory: "/Users/brian",
+      stat: async () => ({ size: 5, mtime: new Date("2026-11-11T14:21:00Z") }) }))
+      .resolves.toEqual({ path: "/cache/production.dump", sizeBytes: 5, modifiedAt: "2026-11-11T14:21:00.000Z" });
+  });
+
+  it("falls back to the home directory cache", async () => {
+    await expect(resolveDumpMetadata({ environment: {}, homeDirectory: "/Users/brian",
+      stat: async () => ({ size: 1, mtime: new Date("2026-11-11T14:21:00Z") }) }))
+      .resolves.toMatchObject({ path: "/Users/brian/playola/.db-cache/production.dump" });
+  });
+
+  it("fails clearly when the dump is missing", async () => {
+    await expect(resolveDumpMetadata({ environment: {}, homeDirectory: "/Users/brian",
+      stat: async () => { throw new Error("ENOENT"); } }))
+      .rejects.toThrow("production dump not found at /Users/brian/playola/.db-cache/production.dump; run `make db-download-production`");
   });
 });

@@ -2,12 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExecResult } from "../effects.ts";
 import { renderEvidenceComment } from "../render.ts";
 import type { EvidenceResult } from "../results.ts";
+import { WEB_CONFIG } from "../test-fixtures.ts";
 import { publishEvidence } from "./publish.ts";
 import type { VerifyDependencies } from "./verify.ts";
 
 const recorded: EvidenceResult = {
-  version: 1, caseId: "weekly-play-counts", classification: "functional", baseCommit: "b0", headCommit: "h2",
-  dump: { path: "/d", modifiedAt: "2026-11-01T00:00:00.000Z", sizeBytes: 1 },
+  version: 2, platform: "web", caseId: "weekly-play-counts", classification: "functional", baseCommit: "b0",
+  headCommit: "h2", toolCommit: "t1", environment: { dump: { path: "/d", modifiedAt: "2026-11-01T00:00:00.000Z", sizeBytes: 1 } },
   revisions: { base: { status: "passed", warnings: [] }, head: { status: "passed", warnings: [] } },
   artifacts: [
     { kind: "video", revision: "base", path: ".qa-artifacts/weekly-play-counts/before.mp4", sizeBytes: 1, sha256: "a" },
@@ -40,14 +41,14 @@ function build(options: { recordedHead: string; sinceRecorded?: string[]; ghExit
 describe("publishEvidence", () => {
   it("refuses to publish stale evidence before calling gh", async () => {
     const { exec, dependencies } = build({ recordedHead: "h1", sinceRecorded: ["client/src/App.tsx"] });
-    await expect(publishEvidence({ repoRoot: "/repo", pr: "123" }, dependencies))
+    await expect(publishEvidence({ repoRoot: "/repo", config: WEB_CONFIG, pr: "123" }, dependencies))
       .rejects.toThrow("UX evidence is stale or missing: weekly-play-counts: client/src/App.tsx changed after recording");
     expect(exec.mock.calls.map(([command]) => command)).not.toContain("gh");
   });
 
   it("posts one comment per case with every attachment", async () => {
     const { exec, dependencies } = build({ recordedHead: "h2" });
-    await publishEvidence({ repoRoot: "/repo", pr: "123" }, dependencies);
+    await publishEvidence({ repoRoot: "/repo", config: WEB_CONFIG, pr: "123" }, dependencies);
     expect(renderEvidenceComment(recorded).attachments).toHaveLength(2);
     expect(exec).toHaveBeenCalledWith("gh", ["pr", "comment", "123",
       "--body-file", "/repo/.qa-artifacts/weekly-play-counts/comment.md",
@@ -57,20 +58,20 @@ describe("publishEvidence", () => {
 
   it("reports a failing gh call with its stderr", async () => {
     const { dependencies } = build({ recordedHead: "h2", ghExit: 1 });
-    await expect(publishEvidence({ repoRoot: "/repo", pr: "123" }, dependencies))
+    await expect(publishEvidence({ repoRoot: "/repo", config: WEB_CONFIG, pr: "123" }, dependencies))
       .rejects.toThrow("gh pr comment failed for weekly-play-counts: boom");
   });
 
   it("refuses to publish when the evidence files changed after recording, before calling gh", async () => {
     const { exec, dependencies } = build({ recordedHead: "h2", checksum: "tampered" });
-    await expect(publishEvidence({ repoRoot: "/repo", pr: "123" }, dependencies))
+    await expect(publishEvidence({ repoRoot: "/repo", config: WEB_CONFIG, pr: "123" }, dependencies))
       .rejects.toThrow("weekly-play-counts: evidence files missing or changed; record again");
     expect(exec.mock.calls.map(([command]) => command)).not.toContain("gh");
   });
 
   it("refuses to publish when comment.md is gone", async () => {
     const { exec, dependencies } = build({ recordedHead: "h2", commentMissing: true });
-    await expect(publishEvidence({ repoRoot: "/repo", pr: "123" }, dependencies))
+    await expect(publishEvidence({ repoRoot: "/repo", config: WEB_CONFIG, pr: "123" }, dependencies))
       .rejects.toThrow("evidence files missing or changed");
     expect(exec.mock.calls.map(([command]) => command)).not.toContain("gh");
   });

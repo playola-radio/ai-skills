@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext } from "playwright";
+import type { WebSettings } from "../core/config.ts";
 import type { EvidenceClassification, RevisionName } from "../core/domain.ts";
 import type { EvidenceFlow, Shot } from "./flow-api.ts";
 
@@ -15,10 +16,9 @@ export interface CaptureRevisionInput {
   startPath: string;
   flow: EvidenceFlow;
   outputDirectory: string;
+  settings: WebSettings;
 }
 
-const VIEWPORT = { width: 1440, height: 900 };
-const CONTEXT_OPTIONS = { viewport: VIEWPORT, locale: "en-US", timezoneId: "America/Chicago" };
 const LOGIN_TIMEOUT_MS = 30_000;
 const SHOT_NAME = /^[a-z0-9-]+$/;
 
@@ -26,12 +26,13 @@ export async function captureRevision(
   input: CaptureRevisionInput,
   launchBrowser: () => Promise<Browser> = () => chromium.launch(),
 ): Promise<BrowserCapture> {
-  const { revision, classification, clientUrl, flow, outputDirectory } = input;
+  const { revision, classification, clientUrl, flow, outputDirectory, settings } = input;
+  const contextOptions = { viewport: settings.viewport, locale: settings.locale, timezoneId: settings.timezoneId };
   const prefix = revision === "base" ? "before" : "after";
   const screenshots = new Map<string, string>();
   const browser = await launchBrowser();
   try {
-    const loginContext = await browser.newContext(CONTEXT_OPTIONS);
+    const loginContext = await browser.newContext(contextOptions);
     const loginPage = await loginContext.newPage();
     await loginPage.goto(`${clientUrl}/dev-user`);
     try {
@@ -45,9 +46,9 @@ export async function captureRevision(
 
     const recording = classification === "functional";
     const context = await browser.newContext({
-      ...CONTEXT_OPTIONS,
+      ...contextOptions,
       storageState,
-      ...(recording ? { recordVideo: { dir: outputDirectory, size: VIEWPORT } } : {}),
+      ...(recording ? { recordVideo: { dir: outputDirectory, size: settings.viewport } } : {}),
     });
     const page = await context.newPage();
     await page.goto(`${clientUrl}${input.startPath}`);

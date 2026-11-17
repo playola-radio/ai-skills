@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
-import { main, makeEvidenceTemporaryDirectory, parseInvocation, run, type CliCommands } from "./cli.ts";
+import { delimiter, join } from "node:path";
+import { loadPlatformAdapter, main, makeRunDirectory, parseInvocation, readToolCommit, run, type CliCommands } from "./cli.ts";
 import type { VerificationReport } from "./core/commands/verify.ts";
 
 const currentReport: VerificationReport = {
@@ -87,6 +89,12 @@ describe("main", () => {
     });
   });
 
+  it("leaves the start path to the platform when --start-path is absent", async () => {
+    const argv = ["new", "--case", "c", "--classification", "visual", "--before", "required"];
+    expect(await main(argv, commands, print)).toBe(0);
+    expect(commands.create).toHaveBeenCalledWith({ id: "c", classification: "visual", beforePolicy: "required", reason: null });
+  });
+
   it("exits 2 when new is missing a required flag or has an invalid value", async () => {
     expect(await main(["new", "--case", "c"], commands, print)).toBe(2);
     const bad = ["new", "--case", "c", "--classification", "loud", "--before", "required", "--start-path", "/x"];
@@ -143,18 +151,71 @@ describe("repository selection", () => {
   });
 });
 
-describe("makeEvidenceTemporaryDirectory", () => {
-  it("creates unique directories under <home>/.cache/playola-ux", async () => {
+describe("makeRunDirectory", () => {
+  it("creates <home>/.cache/playola-ux/<platform>/<run id>", async () => {
     const home = await mkdtemp(join(tmpdir(), "cli-test-home-"));
     try {
-      const first = await makeEvidenceTemporaryDirectory("rev-", home);
-      const second = await makeEvidenceTemporaryDirectory("rev-", home);
-      expect((await stat(first)).isDirectory()).toBe(true);
-      expect(dirname(first)).toBe(join(home, ".cache", "playola-ux"));
-      expect(basename(first).startsWith("rev-")).toBe(true);
-      expect(second).not.toBe(first);
+      const path = await makeRunDirectory("web", "20261116-42", home);
+      expect(path).toBe(join(home, ".cache", "playola-ux", "web", "20261116-42"));
+      expect((await stat(path)).isDirectory()).toBe(true);
     } finally {
       await rm(home, { recursive: true, force: true });
     }
   });
+});
+
+describe("readToolCommit", () => {
+  it("reads the tool checkout's HEAD", async () => {
+    const exec = vi.fn(async () => ({ exitCode: 0, stdout: "toolsha\n", stderr: "" }));
+    await expect(readToolCommit(exec, "/tool")).resolves.toBe("toolsha");
+    expect(exec).toHaveBeenCalledWith("git", ["-C", "/tool", "rev-parse", "HEAD"]);
+  });
+
+  it("explains a tool folder that is not a git checkout", async () => {
+    const exec = async () => ({ exitCode: 128, stdout: "", stderr: "fatal: not a git repository" });
+    await expect(readToolCommit(exec, "/tool")).rejects.toThrow("cannot read the UX evidence tool's commit in /tool: fatal: not a git repository");
+  });
+});
+
+describe("loadPlatformAdapter", () => {
+  it("refuses iOS until its adapter ships", async () => {
+    await expect(loadPlatformAdapter("ios")).rejects.toThrow("ios is not supported by this version of the UX evidence tool");
+  });
+});
+
+function findOnPath(command: string): string {
+  const found = (process.env.PATH ?? "").split(delimiter).map((dir) => join(dir, command)).find((path) => existsSync(path));
+  if (found === undefined) throw new Error(`${command} not found on PATH`);
+  return found;
+}
+
+describe("verify without capture tools", () => {
+  it("verifyNeedsNoCaptureTools: verify succeeds with only git on PATH", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cli-verify-"));
+    try {
+      const repo = join(root, "repo");
+      const bin = join(root, "bin");
+      await mkdir(join(repo, "qa", "ux"), { recursive: true });
+      await mkdir(bin);
+      await symlink(findOnPath("git"), join(bin, "git"));
+      await writeFile(join(repo, "qa", "ux", "config.yaml"), [
+        "version: 1", "platform: web", "baseBranch: develop", "relevant: [\"client/**\"]",
+        "requiresEvidence: [\"client/**\"]", "ignored: []",
+        "web: { viewport: { width: 1440, height: 900 }, locale: en-US, timezoneId: America/Chicago }", "",
+      ].join("\n"));
+      const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
+      git("init", "-q");
+      git("add", "qa/ux/config.yaml");
+      git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "init");
+      git("update-ref", "refs/remotes/origin/develop", "HEAD");
+
+      const tsx = join(import.meta.dirname, "..", "node_modules", "tsx", "dist", "cli.mjs");
+      const result = spawnSync(process.execPath, [tsx, join(import.meta.dirname, "main.ts"), "--repo", repo, "verify"], {
+        env: { PATH: bin, HOME: root }, encoding: "utf8", timeout: 60_000,
+      });
+      expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: "" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

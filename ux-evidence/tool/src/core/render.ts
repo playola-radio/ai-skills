@@ -11,6 +11,12 @@ function shortCommit(commit: string): string {
   return commit.slice(0, SHORT_COMMIT_LENGTH);
 }
 
+function environmentLine(result: EvidenceResult): string {
+  if (result.platform === "web") return `Data: production dump from ${result.environment.dump.modifiedAt.slice(0, 10)}`;
+  const { deviceType, runtime, xcodeVersion, apiHost } = result.environment;
+  return `Device: ${deviceType} on ${runtime}, Xcode ${xcodeVersion}, API ${apiHost}`;
+}
+
 function warningLines(label: string, revision: RevisionResult): string[] {
   return revision.warnings.map((warning) => `Warning (${label}): ${warning}`);
 }
@@ -74,7 +80,7 @@ export function renderEvidenceComment(result: EvidenceResult): RenderedComment {
       `Classification: ${result.classification}`,
       `Base: \`${shortCommit(result.baseCommit)}\``,
       `Head: \`${shortCommit(result.headCommit)}\``,
-      `Data: production dump from ${result.dump.modifiedAt.slice(0, 10)}`,
+      environmentLine(result),
       ...warningLines("base", base),
       ...warningLines("head", head),
     ].join("\n"),

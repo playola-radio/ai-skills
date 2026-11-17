@@ -1,5 +1,5 @@
-import { posix } from "node:path";
-import type { Exec, PathStat } from "./effects.ts";
+import type { EvidenceConfig } from "./config.ts";
+import type { Exec } from "./effects.ts";
 import { blockingDirtyPaths } from "./freshness.ts";
 
 async function git(repoRoot: string, exec: Exec, args: readonly string[]): Promise<string> {
@@ -14,9 +14,13 @@ function nulSeparated(output: string): readonly string[] {
   return output.split("\0").filter((entry) => entry.length > 0);
 }
 
-export async function resolveGitRevisions(repoRoot: string, exec: Exec): Promise<{ head: string; base: string }> {
+export async function resolveGitRevisions(
+  repoRoot: string,
+  baseBranch: string,
+  exec: Exec,
+): Promise<{ head: string; base: string }> {
   const head = (await git(repoRoot, exec, ["rev-parse", "HEAD"])).trim();
-  const base = (await git(repoRoot, exec, ["merge-base", "HEAD", "origin/develop"])).trim();
+  const base = (await git(repoRoot, exec, ["merge-base", "HEAD", `origin/${baseBranch}`])).trim();
   return { head, base };
 }
 
@@ -38,10 +42,11 @@ function pathsFromPorcelain(output: string): readonly string[] {
 export async function listBlockingDirtyPaths(
   repoRoot: string,
   caseId: string,
+  config: EvidenceConfig,
   exec: Exec,
 ): Promise<readonly string[]> {
   const status = await git(repoRoot, exec, ["status", "--porcelain", "-z"]);
-  return blockingDirtyPaths(pathsFromPorcelain(status), caseId);
+  return blockingDirtyPaths(pathsFromPorcelain(status), caseId, config);
 }
 
 export async function changedPathsBetween(
@@ -51,19 +56,4 @@ export async function changedPathsBetween(
   exec: Exec,
 ): Promise<readonly string[]> {
   return nulSeparated(await git(repoRoot, exec, ["diff", "--name-only", "-z", from, to]));
-}
-
-export async function resolveDumpMetadata(input: {
-  environment: NodeJS.ProcessEnv;
-  homeDirectory: string;
-  stat: PathStat;
-}): Promise<{ path: string; sizeBytes: number; modifiedAt: string }> {
-  const directory = input.environment.CENTRAL_DB_CACHE ?? posix.join(input.homeDirectory, "playola", ".db-cache");
-  const path = posix.join(directory, "production.dump");
-  try {
-    const { size, mtime } = await input.stat(path);
-    return { path, sizeBytes: size, modifiedAt: mtime.toISOString() };
-  } catch {
-    throw new Error(`production dump not found at ${path}; run \`make db-download-production\``);
-  }
 }

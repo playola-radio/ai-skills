@@ -1,18 +1,13 @@
+import { CONFIG_PATH, isIgnoredPath, isRelevantPath, requiresEvidence, type EvidenceConfig } from "./config.ts";
+
 export interface FreshnessDecision { current: boolean; reason: string }
 
 const CASES_PREFIX = "qa/ux/";
-const IGNORED_PATTERNS: readonly RegExp[] = [/\.test\./, /\.spec\./, /(^|\/)__tests__\//, /\.md$/];
 
-export function isFreshnessIgnoredPath(path: string): boolean {
-  return IGNORED_PATTERNS.some((pattern) => pattern.test(path));
-}
-
-function isInCaseFolder(path: string, caseId: string): boolean {
-  return path.startsWith(`${CASES_PREFIX}${caseId}/`);
-}
-
-function isUnderAppCode(path: string): boolean {
-  return path.startsWith("client/") || path.startsWith("server/");
+function isRelevantToCase(path: string, caseId: string, config: EvidenceConfig): boolean {
+  if (isRelevantPath(path, config)) return true;
+  const ownsPath = path === CONFIG_PATH || path.startsWith(`${CASES_PREFIX}${caseId}/`);
+  return ownsPath && !isIgnoredPath(path, config);
 }
 
 export function decideEvidenceFreshness(input: {
@@ -20,12 +15,11 @@ export function decideEvidenceFreshness(input: {
   currentHead: string;
   changedSinceRecordedHead: readonly string[];
   caseId: string;
+  config: EvidenceConfig;
 }): FreshnessDecision {
   if (input.recordedHead === undefined) return { current: false, reason: "result.json is missing" };
   if (input.recordedHead === input.currentHead) return { current: true, reason: "recorded at current HEAD" };
-  const relevant = input.changedSinceRecordedHead.find(
-    (path) => (isUnderAppCode(path) || isInCaseFolder(path, input.caseId)) && !isFreshnessIgnoredPath(path),
-  );
+  const relevant = input.changedSinceRecordedHead.find((path) => isRelevantToCase(path, input.caseId, input.config));
   if (relevant !== undefined) return { current: false, reason: `${relevant} changed after recording` };
   return { current: true, reason: "no relevant changes since recording" };
 }
@@ -40,10 +34,14 @@ export function changedCaseIds(changedPaths: readonly string[]): readonly string
   return [...ids];
 }
 
-export function hasRelevantClientChange(changedPaths: readonly string[]): boolean {
-  return changedPaths.some((path) => path.startsWith("client/") && !isFreshnessIgnoredPath(path));
+export function hasChangeRequiringEvidence(changedPaths: readonly string[], config: EvidenceConfig): boolean {
+  return changedPaths.some((path) => requiresEvidence(path, config));
 }
 
-export function blockingDirtyPaths(changedPaths: readonly string[], caseId: string): readonly string[] {
-  return changedPaths.filter((path) => isUnderAppCode(path) || isInCaseFolder(path, caseId));
+export function blockingDirtyPaths(
+  changedPaths: readonly string[],
+  caseId: string,
+  config: EvidenceConfig,
+): readonly string[] {
+  return changedPaths.filter((path) => isRelevantToCase(path, caseId, config));
 }

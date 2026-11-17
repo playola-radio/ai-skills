@@ -6,6 +6,6 @@ export interface EvidenceManifest {
   id: string;
   classification: EvidenceClassification;
   before: { policy: BeforePolicy; reason: string | null };
-  startPath: string;
+  startPath?: string;
 }
 export type ReadTextFile = (path: string) => Promise<string>;

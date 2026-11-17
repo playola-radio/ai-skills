@@ -3,43 +3,44 @@ import {
   blockingDirtyPaths,
   changedCaseIds,
   decideEvidenceFreshness,
-  hasRelevantClientChange,
-  isFreshnessIgnoredPath,
+  hasChangeRequiringEvidence,
 } from "./freshness.ts";
+import { WEB_CONFIG } from "./test-fixtures.ts";
 
-describe("isFreshnessIgnoredPath", () => {
-  it.each(["client/src/App.test.tsx", "server/src/api/foo.spec.ts",
-    "client/src/__tests__/App.tsx", "client/README.md"])("ignores %s", (p) => {
-    expect(isFreshnessIgnoredPath(p)).toBe(true);
+function decide(changedSinceRecordedHead: readonly string[], recordedHead: string | null = "h1") {
+  return decideEvidenceFreshness({
+    recordedHead: recordedHead ?? undefined, currentHead: "h2", changedSinceRecordedHead, caseId: "c", config: WEB_CONFIG,
   });
-  it.each(["client/src/App.tsx", "client/src/App.scss", "server/src/api/foo.api.docs.yaml"])(
-    "does not ignore %s", (p) => { expect(isFreshnessIgnoredPath(p)).toBe(false); });
-});
+}
 
 describe("decideEvidenceFreshness", () => {
   it("is current when recorded head equals HEAD", () => {
     expect(decideEvidenceFreshness({ recordedHead: "h2", currentHead: "h2",
-      changedSinceRecordedHead: ["client/src/App.tsx"], caseId: "c" }))
+      changedSinceRecordedHead: ["client/src/App.tsx"], caseId: "c", config: WEB_CONFIG }))
       .toEqual({ current: true, reason: "recorded at current HEAD" });
   });
   it("is stale after non-test client code changes", () => {
-    expect(decideEvidenceFreshness({ recordedHead: "h1", currentHead: "h2",
-      changedSinceRecordedHead: ["client/src/App.tsx"], caseId: "c" }))
-      .toEqual({ current: false, reason: "client/src/App.tsx changed after recording" });
+    expect(decide(["client/src/App.tsx"])).toEqual({ current: false, reason: "client/src/App.tsx changed after recording" });
+  });
+  it("is stale after server code changes", () => {
+    expect(decide(["server/src/api/foo.api.docs.yaml"]).current).toBe(false);
   });
   it("is stale after its own flow changes", () => {
-    expect(decideEvidenceFreshness({ recordedHead: "h1", currentHead: "h2",
-      changedSinceRecordedHead: ["qa/ux/c/flow.ts"], caseId: "c" }).current).toBe(false);
+    expect(decide(["qa/ux/c/flow.ts"]).current).toBe(false);
+  });
+  it("configChangeInvalidates: is stale after the settings file changes", () => {
+    expect(decide(["qa/ux/config.yaml"])).toEqual({ current: false, reason: "qa/ux/config.yaml changed after recording" });
+  });
+  it.each(["client/src/App.test.tsx", "server/src/api/foo.spec.ts", "client/src/__tests__/App.tsx",
+    "client/README.md", "qa/ux/c/notes.md"])("stays current when only %s changed", (path) => {
+    expect(decide([path]).current).toBe(true);
   });
   it("stays current when only tests, docs or other cases changed", () => {
-    expect(decideEvidenceFreshness({ recordedHead: "h1", currentHead: "h2",
-      changedSinceRecordedHead: ["docs/x.md", "client/src/A.test.tsx", "qa/ux/other/flow.ts", "Makefile"],
-      caseId: "c" })).toEqual({ current: true, reason: "no relevant changes since recording" });
+    expect(decide(["docs/x.md", "client/src/A.test.tsx", "qa/ux/other/flow.ts", "Makefile"]))
+      .toEqual({ current: true, reason: "no relevant changes since recording" });
   });
   it("treats a missing result as stale", () => {
-    expect(decideEvidenceFreshness({ recordedHead: undefined, currentHead: "h2",
-      changedSinceRecordedHead: [], caseId: "c" }))
-      .toEqual({ current: false, reason: "result.json is missing" });
+    expect(decide([], null)).toEqual({ current: false, reason: "result.json is missing" });
   });
 });
 
@@ -50,20 +51,23 @@ describe("changedCaseIds", () => {
   });
 });
 
-describe("hasRelevantClientChange", () => {
-  it("detects a relevant client change", () => {
-    expect(hasRelevantClientChange(["client/src/A.test.tsx", "server/src/x.ts"])).toBe(false);
-    expect(hasRelevantClientChange(["client/src/A.tsx"])).toBe(true);
+describe("hasChangeRequiringEvidence", () => {
+  it("is false for client tests and server code", () => {
+    expect(hasChangeRequiringEvidence(["client/src/A.test.tsx", "client/README.md", "server/src/x.ts"], WEB_CONFIG))
+      .toBe(false);
+  });
+  it("is true for non-test client code", () => {
+    expect(hasChangeRequiringEvidence(["client/src/A.tsx"], WEB_CONFIG)).toBe(true);
   });
 });
 
 describe("blockingDirtyPaths", () => {
-  it("blocks only dirty client, server and current-case paths", () => {
-    expect(blockingDirtyPaths(["client/src/App.tsx", "server/src/s.ts", "qa/ux/c/flow.ts",
-      "qa/ux/other/flow.ts", "docs/n.md"], "c"))
-      .toEqual(["client/src/App.tsx", "server/src/s.ts", "qa/ux/c/flow.ts"]);
+  it("blocks dirty client, server, settings and current-case paths", () => {
+    expect(blockingDirtyPaths(["client/src/App.tsx", "server/src/s.ts", "qa/ux/c/flow.ts", "qa/ux/config.yaml",
+      "qa/ux/other/flow.ts", "docs/n.md"], "c", WEB_CONFIG))
+      .toEqual(["client/src/App.tsx", "server/src/s.ts", "qa/ux/c/flow.ts", "qa/ux/config.yaml"]);
   });
-  it("does not apply the ignore patterns", () => {
-    expect(blockingDirtyPaths(["client/src/App.test.tsx"], "c")).toEqual(["client/src/App.test.tsx"]);
+  it("does not block ignored paths", () => {
+    expect(blockingDirtyPaths(["client/src/App.test.tsx", "client/README.md"], "c", WEB_CONFIG)).toEqual([]);
   });
 });
