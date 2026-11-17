@@ -16,17 +16,29 @@ describe("encodeVideo", () => {
       ["-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "/o/after.mp4"]), expect.anything());
   });
 
-  it("fails when the encoded video is over the cap", async () => {
+  it("attachmentBoundary: a video of exactly 10,485,760 bytes passes and one byte more fails", async () => {
     const exec = vi.fn<Exec>(async () => ok);
-    await expect(encodeVideo({ sourcePath: "/t/in.webm", destinationPath: "/o/after.mp4", exec,
-      stat: async () => ({ size: 10_485_761, mtime: new Date() }) }))
+    const encodeOfSize = (size: number) =>
+      encodeVideo({ sourcePath: "/t/in.mov", destinationPath: "/o/a.mp4", exec, stat: async () => ({ size, mtime: new Date() }) });
+    await expect(encodeOfSize(10_485_760)).resolves.toBeUndefined();
+    await expect(encodeOfSize(10_485_761))
       .rejects.toThrow("encoded video is 10485761 bytes, over GitHub's 10485760-byte limit; shorten the flow");
   });
 
-  it("accepts a video exactly at the cap", async () => {
+  it("keeps web encoding untrimmed", async () => {
     const exec = vi.fn<Exec>(async () => ok);
-    await expect(encodeVideo({ sourcePath: "/t/in.webm", destinationPath: "/o/a.mp4", exec,
-      stat: async () => ({ size: 10_485_760, mtime: new Date() }) })).resolves.toBeUndefined();
+    await encodeVideo({ sourcePath: "/t/in.webm", destinationPath: "/o/after.mp4", exec, stat: smallStat });
+    expect(exec.mock.calls[0]![1]).not.toContain("-vf");
+  });
+
+  it("trims to the measured window at a constant frame rate so a still opening screen is kept", async () => {
+    const exec = vi.fn<Exec>(async () => ok);
+    await encodeVideo({
+      sourcePath: "/t/raw.mov", destinationPath: "/o/after.mp4", exec, stat: smallStat,
+      trim: { startSeconds: 0.25, durationSeconds: 2 },
+    });
+    expect(exec.mock.calls[0]![1]).toEqual(expect.arrayContaining(
+      ["-vf", "fps=30,trim=start=0.25:duration=2,setpts=PTS-STARTPTS"]));
   });
 
   it("names the step and stderr tail when ffmpeg fails", async () => {

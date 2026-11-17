@@ -1,9 +1,9 @@
 import { posix } from "node:path";
 import { createCleanupRegistry } from "../core/cleanup.ts";
-import type { IOSConfig } from "../core/config.ts";
+import type { EvidenceConfig, IOSConfig } from "../core/config.ts";
 import type { RevisionName } from "../core/domain.ts";
 import type { Exec, OwnedProcesses } from "../core/effects.ts";
-import type { PlatformAdapter, RecordContext } from "../core/platform.ts";
+import type { Capture, PlatformAdapter, RecordContext } from "../core/platform.ts";
 import type { IOSEnvironment } from "../core/results.ts";
 import type { buildIOSRevisions, BuildDependencies } from "./build.ts";
 import { assertSecretsPresent } from "./build.ts";
@@ -14,9 +14,11 @@ import {
   type runMaestro,
   type ScreenshotFiles,
 } from "./maestro.ts";
+import { renderIOSCase } from "./templates.ts";
+import { readFrameSeconds, renderMarkScript, type recordIOSVideo, type serveFlowMarks } from "./video.ts";
 import { acquireRunLock, runLockDirectory, type LockFiles } from "./preflight.ts";
 import { loadSavedSession, type SessionDependencies } from "./session.ts";
-import type { SimulatorDependencies, withIOSSimulator } from "./simulator.ts";
+import { developerEnvironment, type SimulatorDependencies, type withIOSSimulator } from "./simulator.ts";
 
 export interface IOSAdapterDependencies {
   homeDirectory: string;
@@ -39,14 +41,16 @@ export interface IOSAdapterDependencies {
   withIOSSimulator: typeof withIOSSimulator;
   runMaestro: typeof runMaestro;
   collectScreenshots: typeof collectScreenshots;
+  recordIOSVideo: typeof recordIOSVideo;
+  serveFlowMarks: typeof serveFlowMarks;
+  now(): number;
 }
 
-const NOT_YET = "iOS functional (video) cases are not yet supported; use a visual case";
-
-function iosConfig(context: RecordContext): IOSConfig {
-  if (context.config.platform !== "ios") throw new Error(`the iOS adapter cannot record ${context.config.platform} cases`);
-  return context.config;
+function asIOSConfig(config: EvidenceConfig): IOSConfig {
+  if (config.platform !== "ios") throw new Error(`the iOS adapter cannot handle ${config.platform} cases`);
+  return config;
 }
+
 
 const OUTPUT_PREFIX: Record<RevisionName, string> = { base: "before", head: "after" };
 
@@ -55,8 +59,7 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
 
   return {
     async preflight(context) {
-      const config = iosConfig(context);
-      if (context.manifest.classification === "functional") throw new Error(NOT_YET);
+      const config = asIOSConfig(context.config);
       // dispose, a failed prepare and an interrupt all share this one teardown, run once.
       const owned = createCleanupRegistry(context.cleanup.signal);
       let teardown: Promise<void> | undefined;
@@ -85,7 +88,7 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
     },
 
     async prepare(context) {
-      const config = iosConfig(context);
+      const config = asIOSConfig(context.config);
       if (run === undefined) throw new Error("the iOS adapter must run preflight before prepare");
       const { processes, owned, dispose, sessionJson } = run;
       const ownedContext: RecordContext = { ...context, cleanup: owned };
@@ -93,7 +96,11 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
         const setupPath = posix.join(context.caseDirectory, "setup.yaml");
         const flowPath = posix.join(context.caseDirectory, "flow.yaml");
         const names = declaredScreenshotNames(await dependencies.readTextFile(flowPath), flowPath);
-        if (names.length === 0) throw new Error(`${flowPath} must take at least one screenshot (takeScreenshot: <name>)`);
+        const functional = context.manifest.classification === "functional";
+        if (functional && names.length > 0) {
+          throw new Error(`${flowPath} records a video (functional case); remove its takeScreenshot steps or make the case visual`);
+        }
+        if (!functional && names.length === 0) throw new Error(`${flowPath} must take at least one screenshot (takeScreenshot: <name>)`);
         const setup = (await dependencies.fileExists(setupPath)) ? setupPath : undefined;
 
         const buildDependencies: BuildDependencies = {
@@ -114,11 +121,41 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
           writeSession: dependencies.writeSession,
         };
 
+        // The recorder starts when flow.yaml begins (after launch and setup) and its output is trimmed to the
+        // measured begin/end marks; setup never appears in the video.
+        async function captureVideo(revision: RevisionName, appPath: string, revisionDirectory: string): Promise<Capture> {
+          const wrapperPath = posix.join(revisionDirectory, "wrapper.yaml");
+          const outputDirectory = posix.join(revisionDirectory, "maestro");
+          const scripts = { begin: posix.join(revisionDirectory, "begin.js"), end: posix.join(revisionDirectory, "end.js") };
+          const video = await dependencies.withIOSSimulator(
+            { context: ownedContext, revision, appPath, sessionJson },
+            simulatorDependencies,
+            (udid) => dependencies.recordIOSVideo(
+              { udid, rawPath: posix.join(revisionDirectory, "recording.mov"), environment: developerEnvironment(config.ios) },
+              async (marks) => {
+                const server = await dependencies.serveFlowMarks(marks);
+                try {
+                  await dependencies.writeTextFile(scripts.begin, renderMarkScript(server.beginUrl));
+                  await dependencies.writeTextFile(scripts.end, renderMarkScript(server.endUrl));
+                  await dependencies.writeTextFile(wrapperPath, renderMaestroWrapper(config.ios.bundleId, setup, flowPath, scripts));
+                  await dependencies.runMaestro({ settings: config.ios, udid, wrapperPath, outputDirectory }, processes.exec);
+                  await dependencies.collectScreenshots(outputDirectory, [], dependencies.screenshotFiles);
+                } finally {
+                  await server.close();
+                }
+              },
+              { start: processes.start, frameSeconds: (path) => readFrameSeconds(path, processes.exec), now: dependencies.now },
+            ),
+          );
+          return { screenshots: new Map(), videoPath: video.path, videoTrim: video.trim, warnings: [] };
+        }
+
         return {
           async capture(revision) {
             const appPath = apps.get(revision);
             if (appPath === undefined) throw new Error(`${revision} was not built`);
             const revisionDirectory = posix.join(context.runDirectory, revision);
+            if (functional) return captureVideo(revision, appPath, revisionDirectory);
             const wrapperPath = posix.join(revisionDirectory, "wrapper.yaml");
             const outputDirectory = posix.join(revisionDirectory, "maestro");
             await dependencies.writeTextFile(wrapperPath, renderMaestroWrapper(config.ios.bundleId, setup, flowPath));
@@ -146,8 +183,8 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
       }
     },
 
-    renderCase() {
-      throw new Error("creating iOS cases with `new` is not yet supported; copy qa/ux/example-stations instead");
+    renderCase(input, config) {
+      return renderIOSCase(input, asIOSConfig(config).ios.bundleId);
     },
   };
 }

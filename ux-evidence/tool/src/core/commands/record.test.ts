@@ -302,6 +302,13 @@ describe("recordEvidenceCase", () => {
       expect(ctx.writtenPaths).toEqual([]);
     });
 
+    it("encodes each video with the trim window its capture measured", async () => {
+      const trim = { startSeconds: 0.25, durationSeconds: 2 };
+      ctx.capture.mockResolvedValueOnce({ ...shots("base", []), videoTrim: trim }).mockResolvedValueOnce(shots("head", []));
+      await recordEvidenceCase(input, ctx.deps);
+      expect(ctx.deps.encodeVideo.mock.calls.map(([request]) => (request as { trim?: unknown }).trim)).toEqual([trim, undefined]);
+    });
+
     it("fails when a functional capture has no video", async () => {
       ctx.capture.mockResolvedValueOnce(shots("base", [], false));
       await expect(recordEvidenceCase(input, ctx.deps)).rejects.toThrow("no video was recorded (base)");

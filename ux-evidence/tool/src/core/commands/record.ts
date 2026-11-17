@@ -158,6 +158,7 @@ export async function recordEvidenceCase(
           destinationPath: posix.join(artifactDirectory, fileName),
           exec,
           stat,
+          ...(capture.videoTrim === undefined ? {} : { trim: capture.videoTrim }),
         });
         await dependencies.removeFile(capture.videoPath);
         await addArtifact("video", fileName, { revision });

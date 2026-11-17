@@ -77,6 +77,40 @@ describe("createOwnedProcesses", () => {
     expect(() => process.kill(-child!.pid!, 0)).toThrow();
   }, 10_000);
 
+  it("start streams output and interrupt sends SIGINT, letting the process finish its work", async () => {
+    const { start } = createOwnedProcesses(new AbortController().signal);
+    const lines: string[] = [];
+    let announced: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => { announced = resolve; });
+    const recorder = start("sh", ["-c", "trap 'echo finalized; exit 0' INT; echo started >&2; while :; do sleep 0.05; done"], {
+      onOutput: (text) => { lines.push(text); if (text.includes("started")) announced(); },
+    });
+    await ready;
+    recorder.interrupt();
+    await expect(recorder.finished).resolves.toMatchObject({ exitCode: 0, stdout: "finalized\n" });
+    expect(lines.join("")).toContain("started");
+  }, 10_000);
+
+  it("stopAll also stops a started process", async () => {
+    const controller = new AbortController();
+    const { start } = createOwnedProcesses(controller.signal, { graceMs: 200 });
+    let announced: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => { announced = resolve; });
+    const recorder = start("sh", ["-c", "trap '' INT; echo started; sleep 30"], { onOutput: () => announced() });
+    await ready;
+    controller.abort();
+    await expect(recorder.finished).rejects.toThrow("interrupted while running sh");
+  }, 10_000);
+
+  it("start refuses once the run is interrupted", () => {
+    const controller = new AbortController();
+    controller.abort();
+    const spawnChild = vi.fn();
+    const { start } = createOwnedProcesses(controller.signal, { spawnChild });
+    expect(() => start("xcrun", [])).toThrow("interrupted before running xcrun");
+    expect(spawnChild).not.toHaveBeenCalled();
+  });
+
   it("gives up with a warning naming the process when its group outlives the forced stop", async () => {
     let child: ChildProcess | undefined;
     const spawnChild = (command: string, args: readonly string[]) =>

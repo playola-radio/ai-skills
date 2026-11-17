@@ -144,7 +144,7 @@ describe("createWebAdapter renderCase", () => {
   const visual = { id: "c", classification: "visual" as const, beforePolicy: "required" as const, reason: null, startPath: "/stations" };
 
   it("writes a manifest with the start path and a flow that imports the tool through qa/ux/.tool", () => {
-    const files = build().adapter.renderCase(visual);
+    const files = build().adapter.renderCase(visual, WEB_CONFIG);
     expect([...files.keys()]).toEqual(["evidence.yaml", "flow.ts"]);
     expect(files.get("evidence.yaml")).toContain("startPath: /stations");
     expect(files.get("flow.ts")).toBe([
@@ -159,12 +159,12 @@ describe("createWebAdapter renderCase", () => {
   });
 
   it("leaves the shot out of functional flows", () => {
-    const flowSource = build().adapter.renderCase({ ...visual, classification: "functional" }).get("flow.ts");
+    const flowSource = build().adapter.renderCase({ ...visual, classification: "functional" }, WEB_CONFIG).get("flow.ts");
     expect(flowSource).toContain("demo({ page }: DemoContext)");
     expect(flowSource).not.toContain("shot(");
   });
 
   it("refuses a case without a start path", () => {
-    expect(() => build().adapter.renderCase({ ...visual, startPath: undefined })).toThrow("startPath must begin with /");
+    expect(() => build().adapter.renderCase({ ...visual, startPath: undefined }, WEB_CONFIG)).toThrow("startPath must begin with /");
   });
 });

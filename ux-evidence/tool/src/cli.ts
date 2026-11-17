@@ -53,7 +53,7 @@ const USAGE = [
   "  ux-evidence record --case <id> [--allow-identical]",
   "  ux-evidence verify",
   "  ux-evidence publish --pr <number>",
-  "  ux-evidence new --case <id> --classification <visual|functional> --before <required|not-applicable> [--start-path <path>] [--reason <text>]",
+  "  ux-evidence new --case <id> --classification <visual|functional> --before <required|not-applicable> [--start-path <path>] [--reason <text>]  (--start-path: web only)",
   "  ux-evidence ios-login [--device <udid>]",
 ];
 
@@ -196,12 +196,13 @@ export function wireCommands(repoRoot: string): CliCommands {
     verify: async () => verifyEvidence({ repoRoot, config: await config() }, verifyDependencies),
     publish: async (pr) => publishEvidence({ repoRoot, config: await config(), pr }, verifyDependencies),
     create: async (input) => {
-      const adapter = await loadPlatformAdapter((await config()).platform);
+      const loadedConfig = await config();
+      const adapter = await loadPlatformAdapter(loadedConfig.platform);
       const created = await createEvidenceCase({ ...input, repoRoot }, {
         fileExists: exists,
         makeDirectory,
         writeTextFile,
-        renderCase: (caseInput) => adapter.renderCase(caseInput),
+        renderCase: (caseInput) => adapter.renderCase(caseInput, loadedConfig),
       });
       for (const path of created) console.log(path);
     },

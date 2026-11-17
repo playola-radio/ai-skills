@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { loadPlatformAdapter, main, makeRunDirectory, parseInvocation, readToolCommit, run, type CliCommands } from "./cli.ts";
 import type { VerificationReport } from "./core/commands/verify.ts";
+import { IOS_CONFIG } from "./core/test-fixtures.ts";
 
 const currentReport: VerificationReport = {
   current: true, missingEvidenceForClientChanges: false, cases: [{ caseId: "c", current: true, reason: "recorded at current HEAD" }],
@@ -179,10 +180,10 @@ describe("readToolCommit", () => {
 });
 
 describe("loadPlatformAdapter", () => {
-  it("loads the iOS adapter, which refuses to create cases until video support ships", async () => {
+  it("loads the iOS adapter, which creates Maestro cases", async () => {
     const adapter = await loadPlatformAdapter("ios");
-    expect(() => adapter.renderCase({ id: "c", classification: "visual", beforePolicy: "required", reason: null }))
-      .toThrow("not yet supported");
+    const files = adapter.renderCase({ id: "c", classification: "functional", beforePolicy: "required", reason: null }, IOS_CONFIG);
+    expect([...files.keys()]).toEqual(["evidence.yaml", "setup.yaml", "flow.yaml"]);
   });
 });
 

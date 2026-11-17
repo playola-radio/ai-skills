@@ -16,6 +16,17 @@ describe("renderMaestroWrapper", () => {
     ]);
   });
 
+  it("setupOutsideVideo: the video marks wrap only the case's flow, after launch and setup", () => {
+    const wrapper = renderMaestroWrapper("fm.app", "/c/setup.yaml", "/c/flow.yaml", { begin: "/run/begin.js", end: "/run/end.js" });
+    expect(parseAllDocuments(wrapper)[1]!.toJS()).toEqual([
+      { launchApp: { appId: "fm.app", clearState: false, permissions: { all: "deny" } } },
+      { runFlow: "/c/setup.yaml" },
+      { runScript: "/run/begin.js" },
+      { runFlow: "/c/flow.yaml" },
+      { runScript: "/run/end.js" },
+    ]);
+  });
+
   it("omits setup when the case has none", () => {
     const commands = parseAllDocuments(renderMaestroWrapper("fm.app", undefined, "/c/flow.yaml"))[1]!.toJS() as unknown[];
     expect(commands).toEqual([expect.objectContaining({ launchApp: expect.anything() }), { runFlow: "/c/flow.yaml" }]);

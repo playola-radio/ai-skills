@@ -11,12 +11,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // The app keeps the injected session only if launch leaves its data alone; permission prompts are denied
-// up front so they cannot cover the screen. Setup and flow run as subflows from absolute paths.
-export function renderMaestroWrapper(bundleId: string, setupPath: string | undefined, flowPath: string): string {
+// up front so they cannot cover the screen. Setup and flow run as subflows from absolute paths; a video case
+// brackets only the flow with the scripts that start and end the recording.
+export function renderMaestroWrapper(
+  bundleId: string,
+  setupPath: string | undefined,
+  flowPath: string,
+  videoMarks?: { begin: string; end: string },
+): string {
   const commands = [
     { launchApp: { appId: bundleId, clearState: false, permissions: { all: "deny" } } },
     ...(setupPath === undefined ? [] : [{ runFlow: setupPath }]),
+    ...(videoMarks === undefined ? [] : [{ runScript: videoMarks.begin }]),
     { runFlow: flowPath },
+    ...(videoMarks === undefined ? [] : [{ runScript: videoMarks.end }]),
   ];
   return `${stringify({ appId: bundleId })}---\n${stringify(commands)}`;
 }

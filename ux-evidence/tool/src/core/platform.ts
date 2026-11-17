@@ -2,6 +2,7 @@ import type { CleanupRegistry } from "./cleanup.ts";
 import type { NewCaseInput } from "./commands/new.ts";
 import type { EvidenceConfig } from "./config.ts";
 import type { EvidenceManifest, RevisionName } from "./domain.ts";
+import type { VideoTrim } from "./media.ts";
 import type { EvidenceEnvironment } from "./results.ts";
 
 export interface RecordContext {
@@ -18,6 +19,7 @@ export interface RecordContext {
 export interface Capture {
   screenshots: ReadonlyMap<string, string>;
   videoPath?: string;
+  videoTrim?: VideoTrim;
   warnings: readonly string[];
 }
 
@@ -29,5 +31,5 @@ export interface PreparedRun {
 export interface PlatformAdapter {
   preflight(context: RecordContext): Promise<{ environment: EvidenceEnvironment; tools: Record<string, string> }>;
   prepare(context: RecordContext): Promise<PreparedRun>;
-  renderCase(input: NewCaseInput): ReadonlyMap<string, string>;
+  renderCase(input: NewCaseInput, config: EvidenceConfig): ReadonlyMap<string, string>;
 }

@@ -3,7 +3,9 @@ import { createCleanupRegistry } from "../core/cleanup.ts";
 import type { EvidenceManifest, RevisionName } from "../core/domain.ts";
 import type { RecordContext } from "../core/platform.ts";
 import { IOS_CONFIG } from "../core/test-fixtures.ts";
+import type { FlowMarks } from "./video.ts";
 import { createIOSAdapter, type IOSAdapterDependencies } from "./adapter.ts";
+import { collectScreenshots } from "./maestro.ts";
 import type { LockFiles } from "./preflight.ts";
 
 const manifest: EvidenceManifest = { version: 1, id: "c", classification: "visual", before: { policy: "required", reason: null } };
@@ -30,7 +32,7 @@ function harness(options: { failBuild?: boolean; sessionStatus?: number; missing
   const deps: IOSAdapterDependencies = {
     homeDirectory: "/home/u",
     pid: 42,
-    ownProcesses: () => ({ exec: vi.fn(), stopAll: vi.fn(async () => {}) }),
+    ownProcesses: () => ({ exec: vi.fn(), start: vi.fn(), stopAll: vi.fn(async () => {}) }),
     teardownExec: vi.fn(),
     stopTeardownChildren: vi.fn(async () => {}),
     lockFiles,
@@ -63,6 +65,18 @@ function harness(options: { failBuild?: boolean; sessionStatus?: number; missing
     }) as unknown as IOSAdapterDependencies["withIOSSimulator"],
     runMaestro: vi.fn(async () => {}),
     collectScreenshots: vi.fn(async (outputDirectory: string) => new Map([["stations-list", `${outputDirectory}/stations-list.png`]])),
+    recordIOSVideo: vi.fn(async (input: { rawPath: string }, runFlow: (marks: FlowMarks) => Promise<void>) => {
+      events.push("recorder-ready");
+      await runFlow({ begin: async () => {}, end: () => undefined });
+      events.push("recorder-stopped");
+      return { path: input.rawPath, trim: { startSeconds: 0.25, durationSeconds: 2 } };
+    }) as unknown as IOSAdapterDependencies["recordIOSVideo"],
+    serveFlowMarks: vi.fn(async () => ({
+      beginUrl: "http://127.0.0.1:1/t/begin",
+      endUrl: "http://127.0.0.1:1/t/end",
+      close: async () => { events.push("marks-closed"); },
+    })),
+    now: () => 0,
   };
   return { deps, events, adapter: createIOSAdapter(deps), locked: () => [...entries].join(",") || undefined };
 }
@@ -120,6 +134,7 @@ describe("createIOSAdapter", () => {
     const stopping = new Promise<void>((resolve) => { finishStop = resolve; });
     deps.ownProcesses = () => ({
       exec: vi.fn(),
+      start: vi.fn(),
       stopAll: vi.fn(async () => { events.push("stop-children"); await stopping; events.push("children-stopped"); }),
     });
     deps.checkTools = async () => new Promise(() => undefined);
@@ -170,13 +185,70 @@ describe("createIOSAdapter", () => {
     expect(locked()).toBeUndefined();
   });
 
-  it("refuses functional cases and case creation until video support ships", async () => {
-    const { adapter, locked } = harness();
-    await expect(adapter.preflight(context({ manifest: { ...manifest, classification: "functional" } })))
-      .rejects.toThrow("iOS functional (video) cases are not yet supported");
-    expect(locked()).toBeUndefined();
-    expect(() => adapter.renderCase({ id: "c", classification: "visual", beforePolicy: "required", reason: null }))
-      .toThrow("not yet supported");
+  it("records a functional case as a video of flow.yaml alone, trimmed to its measured window", async () => {
+    const { adapter, deps, events } = harness();
+    deps.readTextFile = async () => "appId: fm.app\n---\n- tapOn: All\n";
+    deps.runMaestro = vi.fn(async () => { events.push("maestro"); });
+    const recordContext = context({ manifest: { ...manifest, classification: "functional" } });
+    await adapter.preflight(recordContext);
+    const prepared = await adapter.prepare(recordContext);
+    const head = await prepared.capture("head");
+    expect(head).toEqual({
+      screenshots: new Map(),
+      videoPath: "/home/u/.cache/playola-ux/ios/run-1/head/recording.mov",
+      videoTrim: { startSeconds: 0.25, durationSeconds: 2 },
+      warnings: [],
+    });
+    expect(events.slice(-5)).toEqual(["capture-head", "recorder-ready", "maestro", "marks-closed", "recorder-stopped"]);
+    expect(deps.recordIOSVideo).toHaveBeenCalledWith(
+      expect.objectContaining({ udid: "udid-head", environment: expect.objectContaining({ DEVELOPER_DIR: "/Applications/Xcode.app/Contents/Developer" }) }),
+      expect.any(Function), expect.anything(),
+    );
+    expect(deps.writeTextFile).toHaveBeenCalledWith(
+      "/home/u/.cache/playola-ux/ios/run-1/head/begin.js", expect.stringContaining('http.post("http://127.0.0.1:1/t/begin"'),
+    );
+    expect(deps.writeTextFile).toHaveBeenCalledWith(
+      "/home/u/.cache/playola-ux/ios/run-1/head/wrapper.yaml",
+      expect.stringMatching(/runScript: \/home\/u\/.cache\/playola-ux\/ios\/run-1\/head\/begin.js\n- runFlow: \/repo\/qa\/ux\/c\/flow.yaml\n- runScript: .*end.js/),
+    );
+  });
+
+  it("a failed flow closes the mark server and publishes no video", async () => {
+    const { adapter, deps, events } = harness();
+    deps.readTextFile = async () => "appId: fm.app\n---\n- tapOn: All\n";
+    deps.runMaestro = vi.fn(async () => { throw new Error("the Maestro flow failed (exit 1)"); });
+    const recordContext = context({ manifest: { ...manifest, classification: "functional" } });
+    await adapter.preflight(recordContext);
+    const prepared = await adapter.prepare(recordContext);
+    await expect(prepared.capture("head")).rejects.toThrow("the Maestro flow failed (exit 1)");
+    expect(events).toContain("marks-closed");
+  });
+
+  it("fails a functional capture when a subflow produces an undeclared screenshot", async () => {
+    const { adapter, deps } = harness();
+    deps.readTextFile = async () => "appId: fm.app\n---\n- runFlow: child.yaml\n";
+    deps.screenshotFiles = {
+      listFilesRecursively: async () => ["/home/u/.cache/playola-ux/ios/run-1/head/maestro/test-output/run/child/takeScreenshot/subflow-shot.png"],
+    };
+    deps.collectScreenshots = collectScreenshots;
+    const recordContext = context({ manifest: { ...manifest, classification: "functional" } });
+    await adapter.preflight(recordContext);
+    const prepared = await adapter.prepare(recordContext);
+    await expect(prepared.capture("head")).rejects.toThrow("does not declare: subflow-shot");
+  });
+
+  it("refuses screenshots in a functional flow, which records only a video", async () => {
+    const { adapter, deps } = harness();
+    const recordContext = context({ manifest: { ...manifest, classification: "functional" } });
+    await adapter.preflight(recordContext);
+    await expect(adapter.prepare(recordContext)).rejects.toThrow("remove its takeScreenshot steps or make the case visual");
+    expect(deps.buildIOSRevisions).not.toHaveBeenCalled();
+  });
+
+  it("creates iOS cases from the templates, using the configured app id", () => {
+    const { adapter } = harness();
+    const files = adapter.renderCase({ id: "c", classification: "functional", beforePolicy: "required", reason: null }, IOS_CONFIG);
+    expect(files.get("flow.yaml")).toContain("appId: fm.playola.playolaradio.staging");
   });
 
   it("refuses a flow without screenshots before building anything", async () => {

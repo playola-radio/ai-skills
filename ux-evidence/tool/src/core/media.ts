@@ -11,15 +11,25 @@ function assertSucceeded(result: ExecResult, description: string): void {
   }
 }
 
+export interface VideoTrim { startSeconds: number; durationSeconds: number }
+
+// The simulator writes a frame only when the screen changes, so a trimmed window is first filled to a constant
+// frame rate; trimming the raw frames alone would drop a still opening screen.
+function trimFilter(trim: VideoTrim | undefined): string[] {
+  if (trim === undefined) return [];
+  return ["-vf", `fps=30,trim=start=${trim.startSeconds}:duration=${trim.durationSeconds},setpts=PTS-STARTPTS`];
+}
+
 export async function encodeVideo(input: {
   sourcePath: string;
   destinationPath: string;
   exec: Exec;
   stat: PathStat;
+  trim?: VideoTrim;
 }): Promise<void> {
-  const { sourcePath, destinationPath, exec, stat } = input;
+  const { sourcePath, destinationPath, exec, stat, trim } = input;
   const result = await exec("ffmpeg", [
-    "-y", "-i", sourcePath, "-an", "-c:v", "libx264", "-preset", "slow", "-crf", "28",
+    "-y", "-i", sourcePath, "-an", ...trimFilter(trim), "-c:v", "libx264", "-preset", "slow", "-crf", "28",
     "-pix_fmt", "yuv420p", "-movflags", "+faststart", destinationPath,
   ], {});
   assertSucceeded(result, `ffmpeg failed encoding ${destinationPath}`);
