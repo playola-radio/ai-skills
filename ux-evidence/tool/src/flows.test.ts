@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadEvidenceFlow, selectFlowPath } from "./flows.ts";
 
@@ -15,6 +18,19 @@ describe("selectFlowPath", () => {
 });
 
 describe("loadEvidenceFlow", () => {
+  it("loads a flow from another repository", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ux-evidence-flow-"));
+    const path = join(directory, "flow.ts");
+    await writeFile(path, "export async function demo() {}\n");
+
+    try {
+      const flow = await loadEvidenceFlow(path);
+      await expect(flow.demo(undefined as never)).resolves.toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("returns setup and demo", async () => {
     const setup = async () => {};
     const demo = async () => {};
