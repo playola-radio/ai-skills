@@ -57,8 +57,8 @@ describe("publishEvidence", () => {
   });
 
   it("shows an uploaded phone screenshot at a fixed width and leaves other media alone", () => {
-    expect(shrinkPhoneShots("a\n\n![phone screenshot](https://x/1)\n\n![](https://x/2)"))
-      .toBe('a\n\n<img src="https://x/1" width="300" alt="phone screenshot">\n\n![](https://x/2)');
+    expect(shrinkPhoneShots("a\n\n![phone screenshot](https://x/1)\n\n![phone comparison](https://x/3)\n\n![](https://x/2)"))
+      .toBe('a\n\n<img src="https://x/1" width="300" alt="phone screenshot">\n\n<img src="https://x/3" width="600" alt="phone comparison">\n\n![](https://x/2)');
   });
 
   it("reports a failing gh call with its stderr", async () => {

@@ -7,11 +7,11 @@ import { resultPath, verifyEvidence, type VerifyDependencies } from "./verify.ts
 export const MISSING_EVIDENCE_MESSAGE =
   'client code changed but no evidence case was added (add a case under qa/ux/, or put "UX evidence: none — <reason>" in the PR body)';
 
-const PHONE_SHOT = "phone screenshot";
+const PHONE_WIDTHS: Record<string, number> = { screenshot: 300, comparison: 600 };
 
 // A full-size phone screenshot fills the page; GitHub only takes a width on an <img> tag, and the upload keeps full size behind the click.
 export function shrinkPhoneShots(body: string): string {
-  return body.replaceAll(new RegExp(`!\\[${PHONE_SHOT}\\]\\(([^)]+)\\)`, "g"), `<img src="$1" width="300" alt="${PHONE_SHOT}">`);
+  return body.replaceAll(/!\[phone (screenshot|comparison)\]\(([^)]+)\)/g, (_, kind, url) => `<img src="${url}" width="${PHONE_WIDTHS[kind]}" alt="phone ${kind}">`);
 }
 
 export async function publishEvidence(
@@ -30,8 +30,8 @@ export async function publishEvidence(
     const result = parseEvidenceResult(await dependencies.readTextFile(resultPath(repoRoot, caseId)));
     const { attachments } = renderEvidenceComment(result);
     const comment = await dependencies.readTextFile(posix.join(repoRoot, ".qa-artifacts", caseId, "comment.md"));
-    const phoneShots = result.platform === "ios" ? result.artifacts.filter((a) => a.kind === "screenshot").map((a) => a.path) : [];
-    const body = phoneShots.reduce((text, path) => text.replace(`![](${path})`, `![${PHONE_SHOT}](${path})`), comment);
+    const phoneShots = result.platform === "ios" ? result.artifacts.filter((a) => a.kind in PHONE_WIDTHS) : [];
+    const body = phoneShots.reduce((text, shot) => text.replace(`![](${shot.path})`, `![phone ${shot.kind}](${shot.path})`), comment);
     const gh = async (args: string[]): Promise<string> => {
       const outcome = await dependencies.exec("gh", args, { cwd: repoRoot });
       if (outcome.exitCode !== 0) {
