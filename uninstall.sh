@@ -25,5 +25,17 @@ for target_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
   done
 done
 
+factory_target="$HOME/.local/bin/factory"
+if [ -L "$factory_target" ]; then
+  target="$(readlink "$factory_target")"
+  case "$target" in
+    "$REPO_DIR"/*)
+      rm "$factory_target"
+      echo "  removed: $factory_target"
+      removed=$((removed + 1))
+      ;;
+  esac
+fi
+
 echo ""
 echo "Done. $removed symlink(s) removed."
