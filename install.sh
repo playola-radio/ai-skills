@@ -43,5 +43,9 @@ for skill_dir in "$REPO_DIR"/*/; do
   done
 done
 
+mkdir -p "$HOME/.local/bin"
+ln -sfn "$REPO_DIR/factory/bin/factory.ts" "$HOME/.local/bin/factory"
+echo "  linked:    $HOME/.local/bin/factory"
+
 echo ""
 echo "Done. $linked link(s) created/refreshed, $skipped skipped."
