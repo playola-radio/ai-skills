@@ -106,7 +106,7 @@ A visual case with a "before" fails when every before/after screenshot is pixel-
 
 ## Live data limits
 
-- **iPhone** records the Staging app against the staging server, signed in as a real account. Flows must not start playback, must not change server data (follow, like, edit the profile, send anything), must not use source-tape actions (they reach production), and must not show account details (no profile tab, no screen with the account's name or email). Staging data can differ between the two recordings.
+- **iPhone** records the Staging app against the staging server, signed in as the owner's own staging account; the tool refuses any other app or server. Never build or record the production app. Flows may open the profile tab, switch to broadcasting mode, and create or change things on staging. Staging data can differ between the two recordings, more so when a flow changes it.
 - **Web** records against a restored production dump with the real `.env` files: do not write flows around actions that send email, push notifications or upload files.
 
 ## Run times

@@ -26,12 +26,7 @@ Removes only symlinks pointing into this repo; leaves your other skills alone.
 
 | Skill | Runs in | What it does |
 |---|---|---|
-| `begin-design-pr` | repo agent | Start a design PR: branch + `design/features/<slug>/brief.md` |
-| `begin-pen-session` | Pen.app | Orient on the brief and create the proposal row on the canvas |
-| `audit-pen-designs` | Pen.app | Audit proposal frames against the codebase on five dimensions; writes `REVIEW.md` / `decisions.md`; never edits the canvas |
-| `export-pen-designs` | Pen.app | PNGs + `pen-nodes.json` + `DESIGN_STATUS.md` rows; `--status` for transitions |
-| `finish-design-pr` | repo agent | Write `DESIGN.md`, run the hard checks and a Codex artifact review, open it |
-| `design-feature` | repo agent | Full feature design: scope → pen.dev visuals → data-layer contracts → adversarial review → implementation plan, shipped as a `design/features/{slug}/` PR |
+| `design-feature` | repo agent | Full feature design with the owner: scope one slice → pen.dev screens → contract and model changes → audit → implementation plan finished by `factory finalize`, shipped as one `designs/ready/<NNN>-<name>/` PR |
 | `create-endpoint` | repo agent | REST endpoint with integration tests + OpenAPI docs |
 | `create-lib` | repo agent | Server library functions with TDD, one function at a time |
 | `create-model` | repo agent | Sequelize model with migration, types, associations, tests |
@@ -41,9 +36,9 @@ Removes only symlinks pointing into this repo; leaves your other skills alone.
 | `review-pr` | repo agent | Review the current branch against the PR review checklist |
 | [`ux-evidence`](ux-evidence/SKILL.md) | repo agent | Record before/after screenshots or video of a visible change in the web or iPhone app and attach them to the PR |
 
-The five design-pr skills share one flow: see [`design-pr-flow.md`](design-pr-flow.md).
-Their mechanical rules live in `design-pr-tools/design_pr.py` (`state` and `check`);
-run its tests with `python3 -m unittest discover design-pr-tools`.
+[`factory/`](factory) is not a skill: it is the command that checks and finishes a design's
+implementation plan and (later) turns it into reviewed PRs. `design-feature` ends by calling it; run its tests with
+`npm test` inside `factory/`.
 
 ## Adding a skill
 

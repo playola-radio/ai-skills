@@ -65,6 +65,16 @@ describe("parseConfigYaml", () => {
     expect(() => parseConfigYaml(iosYaml.replace(/\n {2}bundleId:.*/, ""))).toThrow("ios.bundleId must be a non-empty string");
   });
 
+  it("stagingOnly: rejects an iOS config that points at another server", () => {
+    expect(() => parseConfigYaml(iosYaml.replace("admin-api-staging.playola.fm", "admin-api.playola.fm")))
+      .toThrow("ios.apiHost must be https://admin-api-staging.playola.fm: evidence is only ever recorded from the staging app");
+  });
+
+  it("stagingOnly: rejects an iOS config for another app", () => {
+    expect(() => parseConfigYaml(iosYaml.replace("fm.playola.playolaradio.staging", "fm.playola.playolaradio")))
+      .toThrow("ios.bundleId must be fm.playola.playolaradio.staging: evidence is only ever recorded from the staging app");
+  });
+
   it("rejects an unknown top-level key", () => {
     expect(() => parseConfigYaml(`${webYaml}extra: 1\n`)).toThrow("unknown key in config: extra");
   });
