@@ -48,6 +48,10 @@ const IOS_KEYS: readonly (keyof IOSSettings)[] = [
   "deviceType", "runtime", "xcodePath", "maestroPath", "javaHome", "secretsSource",
 ];
 const IOS_PATH_KEYS: readonly (keyof IOSSettings)[] = ["xcodePath", "maestroPath", "javaHome", "secretsSource"];
+const STAGING_ONLY: Partial<Record<keyof IOSSettings, string>> = {
+  apiHost: "https://admin-api-staging.playola.fm",
+  bundleId: "fm.playola.playolaradio.staging",
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -100,6 +104,10 @@ function parseIOSSettings(value: unknown, homeDirectory: string): IOSSettings {
   const ios = mapping(value, "ios", IOS_KEYS);
   const settings = Object.fromEntries(IOS_KEYS.map((key) => {
     const text = nonEmptyString(ios[key], `ios.${key}`);
+    const required = STAGING_ONLY[key];
+    if (required !== undefined && text !== required) {
+      throw new Error(`ios.${key} must be ${required}: evidence is only ever recorded from the staging app`);
+    }
     return [key, IOS_PATH_KEYS.includes(key) ? expandHome(text, homeDirectory) : text];
   }));
   return settings as unknown as IOSSettings;
