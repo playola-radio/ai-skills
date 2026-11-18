@@ -3,7 +3,7 @@ import type { ExecResult } from "../effects.ts";
 import { renderEvidenceComment } from "../render.ts";
 import type { EvidenceResult } from "../results.ts";
 import { WEB_CONFIG } from "../test-fixtures.ts";
-import { publishEvidence } from "./publish.ts";
+import { publishEvidence, shrinkPhoneShots } from "./publish.ts";
 import type { VerifyDependencies } from "./verify.ts";
 
 const recorded: EvidenceResult = {
@@ -51,9 +51,14 @@ describe("publishEvidence", () => {
     await publishEvidence({ repoRoot: "/repo", config: WEB_CONFIG, pr: "123" }, dependencies);
     expect(renderEvidenceComment(recorded).attachments).toHaveLength(2);
     expect(exec).toHaveBeenCalledWith("gh", ["pr", "comment", "123",
-      "--body-file", "/repo/.qa-artifacts/weekly-play-counts/comment.md",
+      "--body", renderEvidenceComment(recorded).markdown,
       "--attach", "/repo/.qa-artifacts/weekly-play-counts/before.mp4",
       "--attach", "/repo/.qa-artifacts/weekly-play-counts/after.mp4"], { cwd: "/repo" });
+  });
+
+  it("shows an uploaded phone screenshot at a fixed width and leaves other media alone", () => {
+    expect(shrinkPhoneShots("a\n\n![phone screenshot](https://x/1)\n\n![](https://x/2)"))
+      .toBe('a\n\n<img src="https://x/1" width="300" alt="phone screenshot">\n\n![](https://x/2)');
   });
 
   it("reports a failing gh call with its stderr", async () => {
