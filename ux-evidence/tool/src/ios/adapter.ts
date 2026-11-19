@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 import { createCleanupRegistry } from "../core/cleanup.ts";
-import type { EvidenceConfig, IOSConfig } from "../core/config.ts";
+import { exactIOSConfig, type EvidenceConfig, type IOSConfig } from "../core/config.ts";
 import type { RevisionName } from "../core/domain.ts";
 import type { Exec, OwnedProcesses } from "../core/effects.ts";
 import type { Capture, PlatformAdapter, RecordContext } from "../core/platform.ts";
@@ -48,7 +48,7 @@ export interface IOSAdapterDependencies {
 
 function asIOSConfig(config: EvidenceConfig): IOSConfig {
   if (config.platform !== "ios") throw new Error(`the iOS adapter cannot handle ${config.platform} cases`);
-  return config;
+  return exactIOSConfig(config);
 }
 
 
@@ -184,7 +184,8 @@ export function createIOSAdapter(dependencies: IOSAdapterDependencies): Platform
     },
 
     renderCase(input, config) {
-      return renderIOSCase(input, asIOSConfig(config).ios.bundleId);
+      if (config.platform !== "ios") throw new Error(`the iOS adapter cannot handle ${config.platform} cases`);
+      return renderIOSCase(input, config.ios.bundleId);
     },
   };
 }

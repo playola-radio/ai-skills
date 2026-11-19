@@ -20,7 +20,7 @@ export interface WebSettings {
   timezoneId: string;
 }
 
-export interface IOSSettings {
+interface IOSAppSettings {
   project: string;
   scheme: string;
   configuration: string;
@@ -28,27 +28,40 @@ export interface IOSSettings {
   bundleId: string;
   apiHost: string;
   deviceType: string;
-  runtime: string;
-  xcodePath: string;
   maestroPath: string;
   javaHome: string;
   secretsSource: string;
 }
 
+// What a recording runs on: one exact Xcode and one exact simulator runtime.
+export interface IOSSettings extends IOSAppSettings { runtime: string; xcodePath: string }
+
+// As written in qa/ux/config.yaml. Xcode and the runtime are each either exact (xcodePath, runtime) or a
+// major version (xcodeVersion, iosVersion: "27" means any 27.x installed on this machine).
+export interface WrittenIOSSettings extends IOSAppSettings {
+  runtime?: string;
+  iosVersion?: string;
+  xcodePath?: string;
+  xcodeVersion?: string;
+}
+
 export interface WebConfig extends PathPolicy { platform: "web"; web: WebSettings }
-export interface IOSConfig extends PathPolicy { platform: "ios"; ios: IOSSettings }
-export type EvidenceConfig = WebConfig | IOSConfig;
+export interface WrittenIOSConfig extends PathPolicy { platform: "ios"; ios: WrittenIOSSettings }
+export interface IOSConfig extends WrittenIOSConfig { ios: IOSSettings }
+export type EvidenceConfig = WebConfig | WrittenIOSConfig;
 export type Platform = EvidenceConfig["platform"];
 
 const POLICY_KEYS = ["version", "platform", "baseBranch", "relevant", "requiresEvidence", "ignored"];
 const WEB_KEYS = ["viewport", "locale", "timezoneId"];
 const VIEWPORT_KEYS = ["width", "height"];
-const IOS_KEYS: readonly (keyof IOSSettings)[] = [
+const IOS_APP_KEYS: readonly (keyof IOSAppSettings)[] = [
   "project", "scheme", "configuration", "productName", "bundleId", "apiHost",
-  "deviceType", "runtime", "xcodePath", "maestroPath", "javaHome", "secretsSource",
+  "deviceType", "maestroPath", "javaHome", "secretsSource",
 ];
-const IOS_PATH_KEYS: readonly (keyof IOSSettings)[] = ["xcodePath", "maestroPath", "javaHome", "secretsSource"];
-const STAGING_ONLY: Partial<Record<keyof IOSSettings, string>> = {
+// Each pair is [exact, major version]; a config gives exactly one of the two.
+const IOS_VERSIONED = [["runtime", "iosVersion"], ["xcodePath", "xcodeVersion"]] as const;
+const IOS_PATH_KEYS: readonly (keyof WrittenIOSSettings)[] = ["xcodePath", "maestroPath", "javaHome", "secretsSource"];
+const STAGING_ONLY: Partial<Record<keyof IOSAppSettings, string>> = {
   apiHost: "https://admin-api-staging.playola.fm",
   bundleId: "fm.playola.playolaradio.staging",
 };
@@ -100,17 +113,36 @@ function parseWebSettings(value: unknown): WebSettings {
   };
 }
 
-function parseIOSSettings(value: unknown, homeDirectory: string): IOSSettings {
-  const ios = mapping(value, "ios", IOS_KEYS);
-  const settings = Object.fromEntries(IOS_KEYS.map((key) => {
+function majorVersion(value: unknown, name: string): string {
+  const text = typeof value === "number" ? String(value) : value;
+  if (typeof text !== "string" || !/^[1-9]\d*$/.test(text)) throw new Error(`${name} must be a major version such as "27"`);
+  return text;
+}
+
+function parseIOSSettings(value: unknown, homeDirectory: string): WrittenIOSSettings {
+  const ios = mapping(value, "ios", [...IOS_APP_KEYS, ...IOS_VERSIONED.flat()]);
+  const path = (key: keyof WrittenIOSSettings, text: string) => (IOS_PATH_KEYS.includes(key) ? expandHome(text, homeDirectory) : text);
+  const settings = Object.fromEntries(IOS_APP_KEYS.map((key) => {
     const text = nonEmptyString(ios[key], `ios.${key}`);
     const required = STAGING_ONLY[key];
     if (required !== undefined && text !== required) {
       throw new Error(`ios.${key} must be ${required}: evidence is only ever recorded from the staging app`);
     }
-    return [key, IOS_PATH_KEYS.includes(key) ? expandHome(text, homeDirectory) : text];
+    return [key, path(key, text)];
   }));
-  return settings as unknown as IOSSettings;
+  for (const [exact, major] of IOS_VERSIONED) {
+    if ((ios[exact] === undefined) === (ios[major] === undefined)) throw new Error(`ios needs exactly one of ${exact} or ${major}`);
+    if (ios[major] !== undefined) settings[major] = majorVersion(ios[major], `ios.${major}`);
+    else settings[exact] = path(exact, nonEmptyString(ios[exact], `ios.${exact}`));
+  }
+  return settings as unknown as WrittenIOSSettings;
+}
+
+// The iOS recorder works from an exact Xcode and runtime; ios/versions.ts fills them in from the machine.
+export function exactIOSConfig(config: WrittenIOSConfig): IOSConfig {
+  const { runtime, xcodePath } = config.ios;
+  if (runtime === undefined || xcodePath === undefined) throw new Error("the installed Xcode and simulator runtime were not looked up");
+  return { ...config, ios: { ...config.ios, runtime, xcodePath } };
 }
 
 export function parseConfigYaml(yamlText: string, homeDirectory: string = homedir()): EvidenceConfig {

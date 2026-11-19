@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isIgnoredPath, isRelevantPath, loadConfig, parseConfigYaml, requiresEvidence } from "./config.ts";
+import { exactIOSConfig, isIgnoredPath, isRelevantPath, loadConfig, parseConfigYaml, requiresEvidence } from "./config.ts";
 
 const webYaml = `
 version: 1
@@ -73,6 +73,39 @@ describe("parseConfigYaml", () => {
   it("stagingOnly: rejects an iOS config for another app", () => {
     expect(() => parseConfigYaml(iosYaml.replace("fm.playola.playolaradio.staging", "fm.playola.playolaradio")))
       .toThrow("ios.bundleId must be fm.playola.playolaradio.staging: evidence is only ever recorded from the staging app");
+  });
+
+  const anyMajorYaml = iosYaml
+    .replace(/runtime: .*/, 'iosVersion: "27"')
+    .replace(/xcodePath: .*/, "xcodeVersion: 27");
+
+  it("anyMinorVersion: accepts a major version in place of the exact Xcode and simulator runtime", () => {
+    const config = parseConfigYaml(anyMajorYaml);
+    if (config.platform !== "ios") throw new Error("expected ios");
+    expect(config.ios).toMatchObject({ iosVersion: "27", xcodeVersion: "27" });
+    expect(config.ios.xcodePath).toBeUndefined();
+    expect(config.ios.runtime).toBeUndefined();
+  });
+
+  it("anyMinorVersion: rejects a version that is not a whole major number", () => {
+    expect(() => parseConfigYaml(anyMajorYaml.replace("xcodeVersion: 27", "xcodeVersion: 27.1")))
+      .toThrow('ios.xcodeVersion must be a major version such as "27"');
+  });
+
+  it("anyMinorVersion: wants each of Xcode and the runtime named exactly one way", () => {
+    expect(() => parseConfigYaml(anyMajorYaml.replace("xcodeVersion: 27", "xcodeVersion: 27\n  xcodePath: /Applications/Xcode.app")))
+      .toThrow("ios needs exactly one of xcodePath or xcodeVersion");
+    expect(() => parseConfigYaml(iosYaml.replace(/\n {2}runtime:.*/, "")))
+      .toThrow("ios needs exactly one of runtime or iosVersion");
+  });
+
+  it("anyMinorVersion: a config that names only major versions is not ready to record from", () => {
+    const config = parseConfigYaml(anyMajorYaml);
+    if (config.platform !== "ios") throw new Error("expected ios");
+    expect(() => exactIOSConfig(config)).toThrow("the installed Xcode and simulator runtime were not looked up");
+    const pinned = parseConfigYaml(iosYaml);
+    if (pinned.platform !== "ios") throw new Error("expected ios");
+    expect(exactIOSConfig(pinned).ios.xcodePath).toBe("/Applications/Xcode-27.1.0.app");
   });
 
   it("rejects an unknown top-level key", () => {
