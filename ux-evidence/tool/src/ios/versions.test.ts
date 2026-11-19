@@ -15,18 +15,23 @@ const runtime = (name: string, deviceTypes: string[] = [IOS_CONFIG.ios.deviceTyp
   supportedDeviceTypes: deviceTypes.map((identifier) => ({ identifier })),
 });
 
-// xcodes maps an .app path to what `xcodebuild -version` prints for it; a missing entry is a broken install.
+const BUNDLED_XCODEBUILD = "/Contents/Developer/usr/bin/xcodebuild";
+
+// xcodes maps an .app path to what its own xcodebuild prints for -version. Safari.app has no xcodebuild
+// inside it, and Xcode-broken.app has one that fails.
 function machine(xcodes: Record<string, string>, runtimes: unknown[] = [runtime("iOS-27-0")]) {
-  const exec = vi.fn<Exec>(async (command, args, options) => {
-    const app = options?.env?.DEVELOPER_DIR?.replace("/Contents/Developer", "") ?? "";
-    if (command === "xcodebuild") {
+  const exec = vi.fn<Exec>(async (command, args) => {
+    if (command.endsWith(BUNDLED_XCODEBUILD)) {
+      const app = command.slice(0, -BUNDLED_XCODEBUILD.length);
+      if (app === "/Applications/Xcode-broken.app") return { exitCode: 1, stdout: "", stderr: "broken" };
       const version = xcodes[app];
-      return version === undefined ? { exitCode: 1, stdout: "", stderr: "broken" } : ok(`Xcode ${version}\nBuild version X\n`);
+      if (version === undefined) throw new Error(`spawn ${command} ENOENT`);
+      return ok(`Xcode ${version}\nBuild version X\n`);
     }
     if (command === "xcrun" && args[1] === "list") return ok(JSON.stringify({ runtimes }));
     throw new Error(`unexpected ${command}`);
   });
-  const listDirectory = async () => [...Object.keys(xcodes).map((path) => path.replace("/Applications/", "")), "Safari.app", "Xcode-broken.app"];
+  const listDirectory = async () => [...Object.keys(xcodes).map((path) => path.replace("/Applications/", "")), "Safari.app", "Xcode-broken.app", "Notes"];
   return { exec, listDirectory };
 }
 
@@ -39,6 +44,11 @@ describe("findInstalledVersions", () => {
       "/Applications/Xcode-beta.app": "28.0",
     }));
     expect(found.ios.xcodePath).toBe("/Applications/Xcode.app");
+  });
+
+  it("anyMinorVersion: finds an Xcode whose folder name does not start with Xcode", async () => {
+    const found = await findInstalledVersions(ANY_27, machine({ "/Applications/27.2-Xcode.app": "27.2", "/Applications/Xcode-27.1.0.app": "27.1" }));
+    expect(found.ios.xcodePath).toBe("/Applications/27.2-Xcode.app");
   });
 
   it("anyMinorVersion: uses the newest installed runtime of the major version that can run the device", async () => {

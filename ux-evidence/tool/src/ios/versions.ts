@@ -26,13 +26,15 @@ function newestFirst(left: string, right: string): number {
   return 0;
 }
 
-// Asks each Xcode in /Applications for its own version, so the folder's name does not matter.
+// Runs the xcodebuild inside each app in /Applications, so an Xcode is found whatever its folder is called.
+// An app without one is not an Xcode: starting it fails at once and the app is skipped.
 async function newestXcode(major: string, { exec, listDirectory }: VersionDependencies): Promise<string> {
   const installed: Array<{ path: string; version: string }> = [];
   for (const name of await listDirectory(APPLICATIONS)) {
-    if (!/^Xcode.*\.app$/.test(name)) continue;
+    if (!name.endsWith(".app")) continue;
     const path = join(APPLICATIONS, name);
-    const result = await exec("xcodebuild", ["-version"], { env: developerEnvironment({ xcodePath: path }) }).catch(() => undefined);
+    const environment = developerEnvironment({ xcodePath: path });
+    const result = await exec(join(environment.DEVELOPER_DIR!, "usr", "bin", "xcodebuild"), ["-version"], { env: environment }).catch(() => undefined);
     const version = result?.exitCode === 0 ? /^Xcode (\d+(?:\.\d+)*)/.exec(result.stdout)?.[1] : undefined;
     if (version !== undefined) installed.push({ path, version });
   }
