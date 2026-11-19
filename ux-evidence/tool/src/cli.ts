@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { clearArtifactDirectory } from "./core/artifacts.ts";
@@ -9,7 +9,7 @@ import { createEvidenceCase, type NewCaseInput } from "./core/commands/new.ts";
 import { MISSING_EVIDENCE_MESSAGE, publishEvidence } from "./core/commands/publish.ts";
 import { recordEvidenceCase } from "./core/commands/record.ts";
 import { verifyEvidence, type VerificationReport, type VerifyDependencies } from "./core/commands/verify.ts";
-import { loadConfig, type Platform } from "./core/config.ts";
+import { loadConfig, type IOSConfig, type Platform, type WrittenIOSConfig } from "./core/config.ts";
 import type { BeforePolicy, EvidenceClassification } from "./core/domain.ts";
 import { realExec, realStat, type Exec } from "./core/effects.ts";
 import { composeComparisonPng, encodeVideo, pixelsIdentical } from "./core/media.ts";
@@ -191,6 +191,11 @@ export function wireCommands(repoRoot: string): CliCommands {
   const checksumFile = async (path: string) => createHash("sha256").update(await readFile(path)).digest("hex");
   const verifyDependencies: VerifyDependencies = { exec: realExec, readTextFile, fileExists: exists, checksumFile };
   const config = () => loadConfig(repoRoot, readTextFile);
+  // Only recording and signing in run Xcode, so only they need one to be installed.
+  async function onInstalledVersions(written: WrittenIOSConfig): Promise<IOSConfig> {
+    const { findInstalledVersions } = await import("./ios/versions.ts");
+    return findInstalledVersions(written, { exec: realExec, listDirectory: (path) => readdir(path) });
+  }
 
   return {
     verify: async () => verifyEvidence({ repoRoot, config: await config() }, verifyDependencies),
@@ -210,7 +215,7 @@ export function wireCommands(repoRoot: string): CliCommands {
       const loadedConfig = await config();
       if (loadedConfig.platform !== "ios") throw new Error("ios-login needs a repository whose qa/ux/config.yaml has platform: ios");
       const { captureSession, realAuthorizedGet, realSessionFiles } = await import("./ios/session.ts");
-      return captureSession(loadedConfig.ios, device, {
+      return captureSession((await onInstalledVersions(loadedConfig)).ios, device, {
         exec: realExec,
         files: realSessionFiles,
         get: realAuthorizedGet,
@@ -219,7 +224,8 @@ export function wireCommands(repoRoot: string): CliCommands {
       });
     },
     record: async (caseId, { allowIdentical }) => {
-      const loadedConfig = await config();
+      const written = await config();
+      const loadedConfig = written.platform === "ios" ? await onInstalledVersions(written) : written;
       const adapter = await loadPlatformAdapter(loadedConfig.platform);
       await runWithSignalCleanup(async (cleanup) => {
         await recordEvidenceCase({ repoRoot, caseId, config: loadedConfig, allowIdentical }, {

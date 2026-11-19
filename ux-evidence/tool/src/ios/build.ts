@@ -1,5 +1,5 @@
 import { join, posix } from "node:path";
-import type { IOSConfig, IOSSettings } from "../core/config.ts";
+import { exactIOSConfig, type IOSConfig, type IOSSettings } from "../core/config.ts";
 import type { RevisionName } from "../core/domain.ts";
 import type { Exec } from "../core/effects.ts";
 import type { RecordContext } from "../core/platform.ts";
@@ -55,7 +55,7 @@ export function xcodebuildArguments(settings: IOSSettings, derivedDataPath: stri
 
 function iosConfig(context: RecordContext): IOSConfig {
   if (context.config.platform !== "ios") throw new Error(`the iOS adapter cannot record ${context.config.platform} cases`);
-  return context.config;
+  return exactIOSConfig(context.config);
 }
 
 // Builds every applicable revision before anything is captured, base first. A failed base build stops

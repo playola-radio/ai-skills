@@ -1,5 +1,5 @@
 import { basename, join } from "node:path";
-import type { IOSConfig, IOSSettings } from "../core/config.ts";
+import { exactIOSConfig, type IOSSettings } from "../core/config.ts";
 import type { RevisionName } from "../core/domain.ts";
 import type { Exec } from "../core/effects.ts";
 import type { RecordContext } from "../core/platform.ts";
@@ -12,11 +12,11 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function developerEnvironment(settings: IOSSettings): NodeJS.ProcessEnv {
+export function developerEnvironment(settings: Pick<IOSSettings, "xcodePath">): NodeJS.ProcessEnv {
   return { ...process.env, DEVELOPER_DIR: join(settings.xcodePath, "Contents", "Developer") };
 }
 
-export async function simctl(settings: IOSSettings, exec: Exec, args: readonly string[]): Promise<string> {
+export async function simctl(settings: Pick<IOSSettings, "xcodePath">, exec: Exec, args: readonly string[]): Promise<string> {
   const result = await exec("xcrun", ["simctl", ...args], { env: developerEnvironment(settings) });
   if (result.exitCode !== 0) {
     throw new Error(`simctl ${args[0]} failed (exit ${result.exitCode}): ${tail(result.stderr || result.stdout, 10)}`);
@@ -42,7 +42,7 @@ class TeardownTimeoutError extends Error {}
 
 function iosSettings(context: RecordContext): IOSSettings {
   if (context.config.platform !== "ios") throw new Error(`the iOS adapter cannot record ${context.config.platform} cases`);
-  return (context.config as IOSConfig).ios;
+  return exactIOSConfig(context.config).ios;
 }
 
 // Every simctl call names the device this function created; nothing here addresses "booted" or "all".

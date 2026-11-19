@@ -46,7 +46,7 @@ make ux-evidence-setup        # rerun after the tool's packages change
 ```
 
 - **Web:** Docker running, and the production dump cached (`make db-download-production`).
-- **iPhone:** Xcode at `xcodePath` in `qa/ux/config.yaml` with its simulator runtime, Maestro, Java 17, the four `Secrets*.xcconfig` files in the `secretsSource` checkout, and a saved staging session.
+- **iPhone:** the Xcode and simulator runtime named in `qa/ux/config.yaml` (an exact `xcodePath` and `runtime`, or `xcodeVersion` and `iosVersion` for any installed minor version of that major), Maestro, Java 17, the four `Secrets*.xcconfig` files in the `secretsSource` checkout, and a saved staging session.
 
 ### iPhone staging sign-in
 
