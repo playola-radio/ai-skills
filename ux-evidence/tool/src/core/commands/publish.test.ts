@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import type { ExecResult } from "../effects.ts";
 import { renderEvidenceComment } from "../render.ts";
@@ -80,6 +81,33 @@ describe("publishEvidence", () => {
       ["api", "-X", "DELETE", "repos/{owner}/{repo}/issues/comments/5"],
       ["api", "-X", "DELETE", "repos/{owner}/{repo}/issues/comments/7"],
     ]);
+  });
+
+  it("preserves other authors and similarly named cases when selecting comments to delete", async () => {
+    const { exec, dependencies } = build({ recordedHead: "h2" });
+    const heading = "## UX evidence: weekly-play-counts";
+    const comments = [
+      { id: 5, user: { login: "brian" }, body: `${heading}\r\nold evidence` },
+      { id: 9, user: { login: "brian" }, body: `${heading}\nnew evidence` },
+      { id: 6, user: { login: "someone-else" }, body: heading },
+      { id: 7, user: { login: "brian" }, body: `${heading}-actions\nevidence` },
+    ];
+    exec.mockImplementation(async (command, args): Promise<ExecResult> => {
+      const out = (stdout: string): ExecResult => ({ exitCode: 0, stdout, stderr: "" });
+      if (command !== "gh") {
+        if (args[0] === "rev-parse") return out("h2\n");
+        if (args[0] === "merge-base") return out("b0\n");
+        if (args[0] === "diff") return out("qa/ux/weekly-play-counts/evidence.yaml\0");
+        return out("");
+      }
+      if (args[0] === "pr") return out("https://github.com/o/r/pull/123#issuecomment-9\n");
+      if (args.includes("--paginate")) return out(execFileSync("jq", ["-r", args[args.indexOf("--jq") + 1]], { input: JSON.stringify(comments), encoding: "utf8" }));
+      if (args.includes("-X")) return out("");
+      return out("https://api.github.com/repos/o/r/issues/123\tbrian\n");
+    });
+    await publishEvidence({ repoRoot: "/repo", config: WEB_CONFIG, pr: "123" }, dependencies);
+    expect(exec.mock.calls.filter(([command, args]) => command === "gh" && args.includes("DELETE")).map(([, args]) => args))
+      .toEqual([["api", "-X", "DELETE", "repos/{owner}/{repo}/issues/comments/5"]]);
   });
 
   it("shows an uploaded phone screenshot at a fixed width and leaves other media alone", () => {
