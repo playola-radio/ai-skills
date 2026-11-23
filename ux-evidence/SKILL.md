@@ -91,7 +91,7 @@ It saves the session to `~/.config/playola-ux/ios-staging-auth.json` and prints 
 
 3. **Check it is current:** `make ux-evidence-verify` (exit 0 means current; otherwise it names the stale case and why).
 4. **After the PR is opened:** `make ux-evidence-publish PR=<number>`. It verifies first, then posts one comment per case.
-5. **After every later push:** `make ux-evidence-verify`; if stale, record and publish again. Old comments stay.
+5. **After every later push:** `make ux-evidence-verify`; if stale, record and publish again. Publishing a case deletes your earlier comments for that case, so the PR shows only the current recording.
 
 ## When the "before" fails
 

@@ -42,9 +42,19 @@ export async function publishEvidence(
     };
     const posted = await gh(["pr", "comment", pr, "--body", body, ...attachments.flatMap((attachment) => ["--attach", posix.join(repoRoot, attachment)])]);
     const commentId = /issuecomment-(\d+)/.exec(posted)?.[1];
-    if (phoneShots.length === 0 || commentId === undefined) continue;
+    if (commentId === undefined) continue;
     const endpoint = `repos/{owner}/{repo}/issues/comments/${commentId}`;
-    const uploaded = await gh(["api", endpoint, "--jq", ".body"]);
-    await gh(["api", "-X", "PATCH", endpoint, "-f", `body=${shrinkPhoneShots(uploaded.trimEnd())}`]);
+    if (phoneShots.length > 0) {
+      const uploaded = await gh(["api", endpoint, "--jq", ".body"]);
+      await gh(["api", "-X", "PATCH", endpoint, "-f", `body=${shrinkPhoneShots(uploaded.trimEnd())}`]);
+    }
+    const [issueUrl, author] = (await gh(["api", endpoint, "--jq", "[.issue_url, .user.login] | @tsv"])).trim().split("\t");
+    const heading = comment.split("\n")[0];
+    const older = await gh(["api", "--paginate", `${issueUrl}/comments`, "--jq",
+      `.[] | select(.id != ${commentId} and .user.login == ${JSON.stringify(author)}` +
+      ` and (.body | split("\\n")[0] | rtrimstr("\\r")) == ${JSON.stringify(heading)}) | .id`]);
+    for (const id of older.split("\n").filter((line) => line !== "")) {
+      await gh(["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}`]);
+    }
   }
 }
