@@ -26,7 +26,6 @@ Removes only symlinks pointing into this repo; leaves your other skills alone.
 
 | Skill | Runs in | What it does |
 |---|---|---|
-| `design-feature` | repo agent | Full feature design with the owner: scope one slice → pen.dev screens → contract and model changes → audit → implementation plan finished by `factory finalize`, shipped as one `designs/ready/<NNN>-<name>/` PR |
 | `create-endpoint` | repo agent | REST endpoint with integration tests + OpenAPI docs |
 | `create-lib` | repo agent | Server library functions with TDD, one function at a time |
 | `create-model` | repo agent | Sequelize model with migration, types, associations, tests |
@@ -36,9 +35,15 @@ Removes only symlinks pointing into this repo; leaves your other skills alone.
 | `review-pr` | repo agent | Review the current branch against the PR review checklist |
 | [`ux-evidence`](ux-evidence/SKILL.md) | repo agent | Record before/after screenshots or video of a visible change in the web or iPhone app and attach them to the PR |
 
-[`factory/`](factory) is not a skill: it is the command that checks and finishes a design's
-implementation plan and (later) turns it into reviewed PRs. `design-feature` ends by calling it; run its tests with
-`npm test` inside `factory/`.
+## The factory and `design-feature`
+
+The `factory` command and the `design-feature` skill moved to their own repo,
+[playola-radio/factory](https://github.com/playola-radio/factory), cloned at `~/playola/factory`. Its
+`./install.sh` links `factory` into `~/.local/bin` and `design-feature` into both skill folders.
+
+If you installed them from this repo before, pull this repo, then run `./install.sh` in `~/playola/factory`: it
+repoints the old links at the factory repo. Designs a repo kept in `designs/ready/` and `designs/done/` now live in
+`factory/ready/` and `factory/done/`.
 
 ## Adding a skill
 

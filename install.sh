@@ -44,21 +44,19 @@ for skill_dir in "$REPO_DIR"/*/; do
 done
 
 mkdir -p "$HOME/.local/bin"
-for tool in factory/bin/factory.ts outside-voice/bin/outside-voice; do
-  tool_target="$HOME/.local/bin/$(basename "$tool" .ts)"
-  if [ -L "$tool_target" ]; then
-    ln -sfn "$REPO_DIR/$tool" "$tool_target"
-    echo "  refreshed: $tool_target"
-    linked=$((linked + 1))
-  elif [ -e "$tool_target" ]; then
-    echo "  SKIP (not a symlink): $tool_target — rename or remove it manually"
-    skipped=$((skipped + 1))
-  else
-    ln -s "$REPO_DIR/$tool" "$tool_target"
-    echo "  linked:    $tool_target"
-    linked=$((linked + 1))
-  fi
-done
+tool_target="$HOME/.local/bin/outside-voice"
+if [ -L "$tool_target" ]; then
+  ln -sfn "$REPO_DIR/outside-voice/bin/outside-voice" "$tool_target"
+  echo "  refreshed: $tool_target"
+  linked=$((linked + 1))
+elif [ -e "$tool_target" ]; then
+  echo "  SKIP (not a symlink): $tool_target — rename or remove it manually"
+  skipped=$((skipped + 1))
+else
+  ln -s "$REPO_DIR/outside-voice/bin/outside-voice" "$tool_target"
+  echo "  linked:    $tool_target"
+  linked=$((linked + 1))
+fi
 
 ov_config="${XDG_CONFIG_HOME:-$HOME/.config}/outside-voice.conf"
 if [ ! -e "$ov_config" ]; then
