@@ -43,20 +43,5 @@ for skill_dir in "$REPO_DIR"/*/; do
   done
 done
 
-mkdir -p "$HOME/.local/bin"
-factory_target="$HOME/.local/bin/factory"
-if [ -L "$factory_target" ]; then
-  ln -sfn "$REPO_DIR/factory/bin/factory.ts" "$factory_target"
-  echo "  refreshed: $factory_target"
-  linked=$((linked + 1))
-elif [ -e "$factory_target" ]; then
-  echo "  SKIP (not a symlink): $factory_target — rename or remove it manually"
-  skipped=$((skipped + 1))
-else
-  ln -s "$REPO_DIR/factory/bin/factory.ts" "$factory_target"
-  echo "  linked:    $factory_target"
-  linked=$((linked + 1))
-fi
-
 echo ""
 echo "Done. $linked link(s) created/refreshed, $skipped skipped."
