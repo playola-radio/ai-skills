@@ -12,7 +12,7 @@ cd ~/playola/playola-skills
 
 Symlinks every skill in this repo into `~/.claude/skills/` and `~/.codex/skills/`, so both tools see them globally — across every project and worktree on this machine.
 
-To pick up updates: `git pull` in this repo. Symlinks already point here, so no re-install needed unless new skills were added.
+To pick up updates: `git pull` in this repo. Symlinks already point here, so no re-install needed unless new skills were added. (If you previously installed `factory` or `design-feature` from this repo, run `./uninstall.sh` to clear the old links and install from [playola-radio/factory](https://github.com/playola-radio/factory).)
 
 ## Uninstall
 
