@@ -5,11 +5,12 @@ import type { Vendor } from './types.ts'
 
 const STAGE_TIMEOUT_MS = 30 * 60 * 1000
 
-export const OTHER_VENDOR: Record<Vendor, Vendor> = { claude: 'codex', codex: 'claude' }
-export const DEFAULT_MODEL: Record<Vendor, string> = { claude: 'opus', codex: 'gpt-6-astra' }
+export const OTHER_VENDOR: Record<Vendor, Vendor> = { claude: 'outside', outside: 'claude' }
+// For the outside vendor the "model" is an outside-voice tier; the provider and model live in its config.
+export const DEFAULT_MODEL: Record<Vendor, string> = { claude: 'opus', outside: 'heavy' }
 export const NO_DELEGATION: Record<Vendor, string> = {
-  claude: 'Do this work yourself in this Claude session. Do NOT hand any of it to Codex (`codex exec` or any other Codex call), and do not invoke skills.',
-  codex: 'Do this work yourself in this Codex session. Do NOT delegate any of it to Claude (`claude -p` or any other Claude invocation). Do not read or follow files under `~/.claude/` or `.claude/skills/`.',
+  claude: 'Do this work yourself in this Claude session. Do NOT hand any of it to another AI tool (`outside-voice`, `codex`, `agy` or similar), and do not invoke skills.',
+  outside: 'Do not read or follow files under `~/.claude/` or `.claude/skills/`.',
 }
 
 interface StageCall {
@@ -69,17 +70,17 @@ async function runClaude(call: StageCall): Promise<unknown> {
   return result.structured_output
 }
 
-async function runCodex(call: StageCall): Promise<unknown> {
+async function runOutside(call: StageCall): Promise<unknown> {
   const lastMessageFile = call.traceFile.replace(/\.jsonl$/, '.last-message.json')
   await runProcess(
-    'codex',
-    ['exec', '-m', call.model, '--sandbox', call.canWrite ? 'danger-full-access' : 'read-only', '--json', '--output-schema', call.schemaFile, '-o', lastMessageFile, '-'],
+    'outside-voice',
+    ['--tier', call.model, '--schema', call.schemaFile, '-o', lastMessageFile, ...(call.canWrite ? ['--write'] : []), '-'],
     call,
   )
   return JSON.parse(fs.readFileSync(lastMessageFile, 'utf8'))
 }
 
-const RUNNERS = { claude: runClaude, codex: runCodex }
+const RUNNERS = { claude: runClaude, outside: runOutside }
 
 export function runAgent({ vendor, runDir, step, ...call }: AgentCall): Promise<unknown> {
   const traceDir = path.join(runDir, 'traces')

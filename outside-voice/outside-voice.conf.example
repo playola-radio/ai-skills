@@ -1,0 +1,23 @@
+# outside-voice: which AI answers when a flow asks for an outside opinion.
+# Switch providers by changing PROVIDER (antigravity, codex or claude).
+# Each tier maps to a model on that provider:
+#   HEAVY = adversarial reviews, architecture consults, contests
+#   MID   = PR creation, review-comment fixes, mechanical edits
+#   LIGHT = quick lookups and summaries
+PROVIDER=antigravity
+
+# Google AI Ultra via the Antigravity CLI (agy). List models: agy models
+# (gemini-4-argon-* and gemini-3.8-flash-* retire 2026-11-30; agy also offers claude-opus-5-5-*)
+ANTIGRAVITY_HEAVY=gemini-4-neon-high
+ANTIGRAVITY_MID=gemini-4-hydrogen-medium
+ANTIGRAVITY_LIGHT=gemini-4-hydrogen-low
+
+# OpenAI Codex CLI
+CODEX_HEAVY=gpt-6.2-astra
+CODEX_MID=gpt-6.1-terra
+CODEX_LIGHT=gpt-5.6-luna
+
+# Claude Code CLI (bills Anthropic; same model family as a Claude main session)
+CLAUDE_HEAVY=opus
+CLAUDE_MID=sonnet
+CLAUDE_LIGHT=haiku

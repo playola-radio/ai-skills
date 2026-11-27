@@ -33,7 +33,7 @@ export async function runGate(pr: PlannedPr, claim: Claim, report: PrReport, wor
     pr_title: pr.title,
     base: claim.base,
     branch: report.branch,
-    no_delegation: NO_DELEGATION.codex,
+    no_delegation: NO_DELEGATION.outside,
   }
   const rounds: GateRound[] = []
   const end = (state: GateReport['state'], problems: string[] = []): GateReport => {

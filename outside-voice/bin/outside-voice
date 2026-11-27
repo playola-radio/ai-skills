@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# outside-voice — run one prompt on the "outside" AI model (a second opinion that
+# is not the model driving the session). The provider and the model for each tier
+# live in one config file, so switching providers is a one-line edit.
+#
+# Usage: outside-voice [--tier heavy|mid|light] [--write] [-C dir] [-o file]
+#                      [--schema file] (PROMPT | -)
+#   --tier    heavy = reviews and consults (default); mid = PR chores; light = quick lookups
+#   --write   let the model edit files and run any command (PR creation, review fixes)
+#             without it the run is read-only
+#   -C        directory to run in (default: current)
+#   -o        write the final answer here (default: stdout)
+#   --schema  JSON schema file; the answer is the matching JSON object
+#   -         read the prompt from stdin
+#
+# Config: ${XDG_CONFIG_HOME:-~/.config}/outside-voice.conf (PROVIDER=..., <PROVIDER>_<TIER>=model)
+# Override the provider for one run with OUTSIDE_VOICE_PROVIDER=codex|claude|antigravity.
+# Every run is logged to ${XDG_STATE_HOME:-~/.local/state}/outside-voice/runs.jsonl.
+set -euo pipefail
+
+die() { echo "outside-voice: $*" >&2; exit 2; }
+
+tier=heavy write=false dir="" out="" schema="" prompt=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --tier) tier="${2:?--tier needs a value}"; shift 2 ;;
+    --write) write=true; shift ;;
+    -C) dir="${2:?-C needs a directory}"; shift 2 ;;
+    -o) out="${2:?-o needs a file}"; shift 2 ;;
+    --schema) schema="${2:?--schema needs a file}"; shift 2 ;;
+    -) [ -z "$prompt" ] || die "more than one prompt given"; prompt="$(cat)"; shift ;;
+    -*) die "unknown option '$1'" ;;
+    *) [ -z "$prompt" ] || die "more than one prompt given (quote the prompt)"; prompt="$1"; shift ;;
+  esac
+done
+[ -n "$prompt" ] || die "no prompt given"
+case "$tier" in heavy|mid|light) ;; *) die "unknown tier '$tier' (heavy, mid or light)" ;; esac
+[ -z "$schema" ] || [ -f "$schema" ] || die "no schema file at $schema"
+[ -z "$schema" ] || schema="$(cd "$(dirname "$schema")" && pwd)/$(basename "$schema")"
+[ -z "$out" ] || [ ! -d "$out" ] || die "-o must be a file, not the directory $out"
+[ -z "$out" ] || out="$(cd "$(dirname "$out")" && pwd)/$(basename "$out")"
+[ -z "$dir" ] || cd -P "$dir"
+
+config="${XDG_CONFIG_HOME:-$HOME/.config}/outside-voice.conf"
+[ -f "$config" ] || die "no config at $config"
+# shellcheck source=/dev/null
+. "$config"
+provider="${OUTSIDE_VOICE_PROVIDER:-${PROVIDER:-}}"
+case "$provider" in antigravity|codex|claude) ;; *) die "unknown provider '$provider': set PROVIDER in $config to antigravity, codex or claude" ;; esac
+model_var="$(echo "${provider}_${tier}" | tr '[:lower:]' '[:upper:]')"
+model="${!model_var:-}"
+[ -n "$model" ] || die "no model for provider '$provider' tier '$tier': set $model_var in $config"
+
+prompt="Do this work yourself in this session. Do not delegate any of it to another AI tool (claude, codex, agy, gemini or similar).
+
+$prompt"
+
+# Commands a read-only run may use; everything else is denied. Rules match by prefix,
+# so leave out anything with a writing form (find -delete, git branch -D, sed -i) or one that
+# runs other programs (rg --pre, git grep -O). Known limit: agy rules cannot stop a shell
+# redirect (cat x > y) or git's --output=, so a read-only agy run is not a hard sandbox.
+READ_COMMANDS=(
+  "git diff" "git log" "git show" "git status" "git blame" "git ls-files"
+  "git rev-parse" "git merge-base" "grep" "cat" "ls" "head" "tail" "wc" "jq"
+)
+
+answer_file="$(mktemp)"
+raw_file="$(mktemp)"
+trap 'rm -f "$answer_file" "$raw_file"' EXIT
+started=$(date +%s)
+error=""
+
+run_antigravity() {
+  local args=(--model "$model" --output-format json --disable-slash-commands "--print=$prompt")
+  if $write; then
+    args+=(--dangerously-skip-permissions)
+  else
+    # Deny rules need the (*) form to beat an allow rule in the user's own settings.
+    args+=(--settings "$(jq -nc '{permissions: {
+      allow: [$ARGS.positional[] | "command(\(.))"],
+      deny: ["write_file(*)", "edit_file(*)", "replace_file_content(*)", "multi_replace_file_content(*)", "mcp(*)"]}}' \
+      --args "${READ_COMMANDS[@]}")")
+  fi
+  [ -z "$schema" ] || args+=(--json-schema "$schema")
+  local code=0
+  agy "${args[@]}" < /dev/null > "$raw_file" || code=$?
+  if ! jq -e . "$raw_file" > /dev/null 2>&1; then
+    [ "$code" -eq 0 ] || error="agy exited with $code"
+  elif [ "$(jq -r .status "$raw_file")" != "SUCCESS" ]; then
+    error="$(jq -r '(.error | select(. != "")) // .status' "$raw_file")"
+  elif [ "$code" -ne 0 ]; then
+    error="agy exited with $code"
+  elif [ -n "$schema" ]; then
+    jq '.structured_output // empty' "$raw_file" > "$answer_file"
+  else
+    jq -r '.response // empty' "$raw_file" > "$answer_file"
+  fi
+}
+
+run_codex() {
+  local args=(exec -m "$model" --skip-git-repo-check -o "$answer_file")
+  if $write; then args+=(--sandbox danger-full-access); else args+=(--sandbox read-only); fi
+  [ -z "$schema" ] || args+=(--output-schema "$schema")
+  printf '%s' "$prompt" | codex "${args[@]}" - > "$raw_file" || error="codex exited with $?"
+}
+
+run_claude() {
+  local args=(-p --model "$model" --output-format json --setting-sources "")
+  if $write; then
+    args+=(--permission-mode bypassPermissions)
+  else
+    local tools="Read,Grep,Glob"
+    for c in "${READ_COMMANDS[@]}"; do tools+=",Bash($c:*)"; done
+    args+=(--permission-mode dontAsk --allowedTools "$tools" --disallowedTools "Edit,Write,NotebookEdit")
+  fi
+  [ -z "$schema" ] || args+=(--json-schema "$(cat "$schema")")
+  local code=0 result
+  printf '%s' "$prompt" | claude "${args[@]}" > "$raw_file" || code=$?
+  if ! result="$(jq -ce . "$raw_file" 2>/dev/null)"; then
+    error="claude exited with $code and gave no JSON result"
+  elif [ "$(jq -r '.is_error == true or ((.subtype // "success") != "success")' <<< "$result")" = "true" ]; then
+    error="$(jq -r '[(.errors // [] | join("; ")), (.subtype | select(. != "success")), .result] | map(select(. != null and . != "")) | first // "unknown error"' <<< "$result")"
+  elif [ "$code" -ne 0 ]; then
+    error="claude exited with $code"
+  elif [ -n "$schema" ]; then
+    jq '.structured_output // empty' <<< "$result" > "$answer_file"
+  else
+    jq -r '.result // empty' <<< "$result" > "$answer_file"
+  fi
+}
+
+"run_$provider"
+
+if [ -z "$error" ] && ! grep -q '[^[:space:]]' "$answer_file"; then
+  error="the model gave no answer (on antigravity this usually means a read-only run tried to write or run a command outside its allow-list)"
+fi
+
+log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/outside-voice"
+mkdir -p "$log_dir"
+usage="$(jq -sc 'if length == 1 and (.[0] | type) == "object" then .[0].usage // null else null end' "$raw_file" 2>/dev/null)" || usage=null
+jq -nc --arg provider "$provider" --arg model "$model" --arg tier "$tier" --argjson write "$write" \
+  --arg dir "$PWD" --argjson seconds "$(( $(date +%s) - started ))" --argjson ok "$([ -z "$error" ] && echo true || echo false)" \
+  --arg error "$error" --argjson usage "$usage" \
+  '{at: (now | todate), provider: $provider, model: $model, tier: $tier, write: $write, dir: $dir, seconds: $seconds, ok: $ok, error: $error, usage: $usage}' \
+  >> "$log_dir/runs.jsonl"
+
+if [ -n "$error" ]; then
+  echo "outside-voice: $provider ($model) failed: $error" >&2
+  exit 1
+fi
+if [ -n "$out" ]; then cp "$answer_file" "$out"; else cat "$answer_file"; fi
