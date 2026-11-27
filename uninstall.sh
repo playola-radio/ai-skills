@@ -25,17 +25,19 @@ for target_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
   done
 done
 
-factory_target="$HOME/.local/bin/factory"
-if [ -L "$factory_target" ]; then
-  target="$(readlink "$factory_target")"
-  case "$target" in
-    "$REPO_DIR"/*)
-      rm "$factory_target"
-      echo "  removed: $factory_target"
-      removed=$((removed + 1))
-      ;;
-  esac
-fi
+for name in factory outside-voice; do
+  tool_target="$HOME/.local/bin/$name"
+  if [ -L "$tool_target" ]; then
+    target="$(readlink "$tool_target")"
+    case "$target" in
+      "$REPO_DIR"/*)
+        rm "$tool_target"
+        echo "  removed: $tool_target"
+        removed=$((removed + 1))
+        ;;
+    esac
+  fi
+done
 
 echo ""
 echo "Done. $removed symlink(s) removed."

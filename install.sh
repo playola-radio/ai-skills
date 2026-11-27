@@ -69,3 +69,4 @@ fi
 
 echo ""
 echo "Done. $linked link(s) created/refreshed, $skipped skipped."
+command -v jq >/dev/null 2>&1 || echo "Note: outside-voice requires jq (e.g. brew install jq)."

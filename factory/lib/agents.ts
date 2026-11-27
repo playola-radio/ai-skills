@@ -32,7 +32,7 @@ export interface AgentCall extends Omit<StageCall, 'traceFile'> {
 
 function runProcess(command: string, args: string[], { cwd, prompt, traceFile, timeoutMs = STAGE_TIMEOUT_MS, env }: StageCall): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'], detached: true })
     const trace = fs.createWriteStream(traceFile, { flags: 'a' })
     let stdout = ''
     let stderr = ''
@@ -43,7 +43,13 @@ function runProcess(command: string, args: string[], { cwd, prompt, traceFile, t
     child.stderr.on('data', (chunk) => {
       stderr += chunk
     })
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
+    const timer = setTimeout(() => {
+      if (child.pid) {
+        try {
+          process.kill(-child.pid, 'SIGKILL')
+        } catch {}
+      }
+    }, timeoutMs)
     child.on('error', reject)
     child.on('close', (code, signal) => {
       clearTimeout(timer)

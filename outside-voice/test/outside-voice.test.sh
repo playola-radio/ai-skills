@@ -5,6 +5,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OV="$HERE/../bin/outside-voice"
+ORIG_PATH="$PATH"
 failures=0
 passes=0
 
@@ -12,7 +13,7 @@ setup() {
   T="$(mktemp -d)"
   mkdir -p "$T/bin" "$T/config"
   export HOME="$T/home" XDG_CONFIG_HOME="$T/config" XDG_STATE_HOME="$T/state"
-  export PATH="$T/bin:/usr/bin:/bin:/opt/homebrew/bin"
+  export PATH="$T/bin:$ORIG_PATH"
   unset OUTSIDE_VOICE_PROVIDER
   cat > "$T/config/outside-voice.conf" <<'EOF'
 PROVIDER=antigravity
@@ -191,7 +192,7 @@ test_claude_provider() {
 
 test_config_provider_switch() {
   setup
-  sed -i '' 's/^PROVIDER=.*/PROVIDER=codex/' "$T/config/outside-voice.conf"
+  sed 's/^PROVIDER=.*/PROVIDER=codex/' "$T/config/outside-voice.conf" > "$T/config/outside-voice.conf.tmp" && mv "$T/config/outside-voice.conf.tmp" "$T/config/outside-voice.conf"
   "$OV" -o "$T/out.txt" "x"
   check "config file picks provider" [ -f "$T/codex.args" ]
 }
@@ -205,7 +206,7 @@ test_unknown_provider_fails() {
 
 test_missing_model_fails() {
   setup
-  sed -i '' '/^ANTIGRAVITY_LIGHT=/d' "$T/config/outside-voice.conf"
+  sed '/^ANTIGRAVITY_LIGHT=/d' "$T/config/outside-voice.conf" > "$T/config/outside-voice.conf.tmp" && mv "$T/config/outside-voice.conf.tmp" "$T/config/outside-voice.conf"
   "$OV" --tier light "x" 2>"$T/err" >/dev/null
   check "missing model exits nonzero" [ $? -ne 0 ]
   check "names the setting" grep -q "ANTIGRAVITY_LIGHT" "$T/err"

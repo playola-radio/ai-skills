@@ -16,9 +16,11 @@ import { designStatuses } from '../lib/readiness.ts'
 import type { Review, Vendor } from '../lib/types.ts'
 
 const USAGE = `Usage:
-  factory finalize <repo-path> [design-number] [--author claude|outside] [--reviewer-model <id>]
+  factory finalize <repo-path> [design-number] [--author claude|outside] [--reviewer-model <tier|id>]
                                   check ImplementationPlan.md, have the other vendor review it, and mark it finished
-                                  (no number: the first design without a finished plan; --author is who wrote the plan)
+                                  (no number: the first design without a finished plan; --author is who wrote the plan;
+                                   --reviewer-model takes a tier—heavy|mid|light—when --author is claude, or a Claude
+                                   model ID when --author is outside; outside-voice models live in ~/.config/outside-voice.conf)
   factory status <repo-path>      list designs/ready and say which have a finished plan and can be built
   factory build <repo-path> [--base <branch>] [--model <id>] [--one-design]
                                   start the next design on the base branch as GitHub has it (or continue the one in progress) and implement its next PR
