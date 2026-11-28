@@ -25,8 +25,8 @@ for target_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
   done
 done
 
-for name in factory outside-voice; do
-  tool_target="$HOME/.local/bin/$name"
+for tool_name in outside-voice factory; do
+  tool_target="$HOME/.local/bin/$tool_name"
   if [ -L "$tool_target" ]; then
     target="$(readlink "$tool_target")"
     case "$target" in
