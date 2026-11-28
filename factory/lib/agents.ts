@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Vendor } from './types.ts'
@@ -30,9 +30,37 @@ export interface AgentCall extends Omit<StageCall, 'traceFile'> {
   step: string
 }
 
+const runningChildren = new Set<ChildProcess>()
+let signalsRegistered = false
+
+function killChildGroup(child: ChildProcess): void {
+  if (child.pid) {
+    try {
+      process.kill(-child.pid, 'SIGKILL')
+      return
+    } catch {
+      // Fall back to killing the direct child if process-group signaling fails.
+    }
+  }
+  child.kill('SIGKILL')
+}
+
+function registerSignalHandlers(): void {
+  if (signalsRegistered) return
+  signalsRegistered = true
+  const handleSignal = (code: number) => () => {
+    for (const child of runningChildren) killChildGroup(child)
+    process.exit(code)
+  }
+  process.on('SIGINT', handleSignal(130))
+  process.on('SIGTERM', handleSignal(143))
+}
+
 function runProcess(command: string, args: string[], { cwd, prompt, traceFile, timeoutMs = STAGE_TIMEOUT_MS, env }: StageCall): Promise<string> {
+  registerSignalHandlers()
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'], detached: true })
+    runningChildren.add(child)
     const trace = fs.createWriteStream(traceFile, { flags: 'a' })
     let stdout = ''
     let stderr = ''
@@ -44,15 +72,17 @@ function runProcess(command: string, args: string[], { cwd, prompt, traceFile, t
       stderr += chunk
     })
     const timer = setTimeout(() => {
-      if (child.pid) {
-        try {
-          process.kill(-child.pid, 'SIGKILL')
-        } catch {}
-      }
+      killChildGroup(child)
     }, timeoutMs)
-    child.on('error', reject)
+    child.on('error', (err) => {
+      clearTimeout(timer)
+      runningChildren.delete(child)
+      trace.end()
+      reject(err)
+    })
     child.on('close', (code, signal) => {
       clearTimeout(timer)
+      runningChildren.delete(child)
       trace.end()
       if (code === 0) resolve(stdout)
       else reject(new Error(`${command} ended with ${code ?? signal}: ${stderr.slice(-2000)}`))
