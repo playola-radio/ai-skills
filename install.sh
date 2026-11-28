@@ -44,19 +44,29 @@ for skill_dir in "$REPO_DIR"/*/; do
 done
 
 mkdir -p "$HOME/.local/bin"
-factory_target="$HOME/.local/bin/factory"
-if [ -L "$factory_target" ]; then
-  ln -sfn "$REPO_DIR/factory/bin/factory.ts" "$factory_target"
-  echo "  refreshed: $factory_target"
-  linked=$((linked + 1))
-elif [ -e "$factory_target" ]; then
-  echo "  SKIP (not a symlink): $factory_target — rename or remove it manually"
-  skipped=$((skipped + 1))
-else
-  ln -s "$REPO_DIR/factory/bin/factory.ts" "$factory_target"
-  echo "  linked:    $factory_target"
-  linked=$((linked + 1))
+for tool in factory/bin/factory.ts outside-voice/bin/outside-voice; do
+  tool_target="$HOME/.local/bin/$(basename "$tool" .ts)"
+  if [ -L "$tool_target" ]; then
+    ln -sfn "$REPO_DIR/$tool" "$tool_target"
+    echo "  refreshed: $tool_target"
+    linked=$((linked + 1))
+  elif [ -e "$tool_target" ]; then
+    echo "  SKIP (not a symlink): $tool_target — rename or remove it manually"
+    skipped=$((skipped + 1))
+  else
+    ln -s "$REPO_DIR/$tool" "$tool_target"
+    echo "  linked:    $tool_target"
+    linked=$((linked + 1))
+  fi
+done
+
+ov_config="${XDG_CONFIG_HOME:-$HOME/.config}/outside-voice.conf"
+if [ ! -e "$ov_config" ]; then
+  mkdir -p "$(dirname "$ov_config")"
+  cp "$REPO_DIR/outside-voice/outside-voice.conf.example" "$ov_config"
+  echo "  created:   $ov_config"
 fi
 
 echo ""
 echo "Done. $linked link(s) created/refreshed, $skipped skipped."
+command -v jq >/dev/null 2>&1 || echo "Note: outside-voice requires jq (e.g. brew install jq)."
